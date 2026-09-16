@@ -8,6 +8,11 @@ rom/*
 *.ips
 *.bps
 
+# 외부 배포물(영문 패치 등)에 동봉된 파일
+ReadMe.txt
+readme.txt
+*.txt.bak
+
 # 빌드 산출물
 build/*
 !build/.gitkeep
