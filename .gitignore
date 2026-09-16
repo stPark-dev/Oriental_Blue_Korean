@@ -13,6 +13,11 @@ ReadMe.txt
 readme.txt
 *.txt.bak
 
+# 원문 스크립트 — ROM 파생물이므로 커밋하지 않습니다.
+# 각자 자기 ROM에서 make script 로 재생성하세요.
+script/ja/*
+!script/ja/.gitkeep
+
 # 빌드 산출물
 build/*
 !build/.gitkeep

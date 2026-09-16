@@ -1,0 +1,133 @@
+# 테이블 0xEDE67C / 항목 64개
+# 원문은 script/ja/tEDE67C.txt 를 나란히 놓고 보세요.
+# 본문이 비어 있는 항목은 삽입 시 건너뜁니다 (원문 유지).
+# <F3:XX> 같은 서식 태그는 위치를 바꾸지 말고 그대로 두세요.
+
+## 0001 @0xEDE780
+
+## 0002 @0xEDE79A
+
+## 0003 @0xEDE7C8
+
+## 0004 @0xEDE7FC
+
+## 0005 @0xEDE85B
+
+## 0006 @0xEDE879
+
+## 0007 @0xEDE8D4
+
+## 0008 @0xEDE909
+
+## 0009 @0xEDE92B
+
+## 0010 @0xEDE94D
+
+## 0011 @0xEDE96B
+
+## 0012 @0xEDE997
+
+## 0013 @0xEDEA9B
+
+## 0014 @0xEDEAA2
+
+## 0015 @0xEDEAB8
+
+## 0016 @0xEDEAD1
+
+## 0017 @0xEDEAE5
+
+## 0018 @0xEDEAF0
+
+## 0019 @0xEDEBD3
+
+## 0020 @0xEDEBDA
+
+## 0021 @0xEDEC0C
+
+## 0022 @0xEDEC12
+
+## 0023 @0xEDEC2A
+
+## 0024 @0xEDEC33
+
+## 0025 @0xEDEC81
+
+## 0026 @0xEDECAC
+
+## 0027 @0xEDECB2
+
+## 0028 @0xEDECB8
+
+## 0029 @0xEDECBE
+
+## 0030 @0xEDECC4
+
+## 0031 @0xEDECF6
+
+## 0032 @0xEDED6F
+
+## 0033 @0xEDED75
+
+## 0034 @0xEDED9B
+
+## 0035 @0xEDEDA1
+
+## 0036 @0xEDEDDC
+
+## 0037 @0xEDEDEE
+
+## 0038 @0xEDEE0D
+
+## 0039 @0xEDEE14
+
+## 0040 @0xEDEE3C
+
+## 0041 @0xEDEE3F
+
+## 0042 @0xEDEE69
+
+## 0043 @0xEDEE6C
+
+## 0044 @0xEDEE72
+
+## 0045 @0xEDEE81
+
+## 0046 @0xEDEEBF
+
+## 0047 @0xEDEF0B
+
+## 0048 @0xEDEF11
+
+## 0049 @0xEDEF1F
+
+## 0050 @0xEDEF5C
+
+## 0051 @0xEDEF94
+
+## 0052 @0xEDEF9D
+
+## 0053 @0xEDEFDD
+
+## 0054 @0xEDEFE9
+
+## 0055 @0xEDF051
+
+## 0056 @0xEDF057
+
+## 0057 @0xEDF078
+
+## 0058 @0xEDF07E
+
+## 0059 @0xEDF087
+
+## 0060 @0xEDF098
+
+## 0061 @0xEDF0A6
+
+## 0062 @0xEDF0B0
+
+## 0063 @0xEDF0C6
+
+## 0064 @0xEDF0E4
+

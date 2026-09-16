@@ -53,7 +53,10 @@ vm: ## 이벤트 VM 레코드 요약 (EN=영문판 지정 시 대조)
 grid-find: ## 문자 그리드 후보 탐색
 	@$(PYTHON) tools/dumpgrid.py $(ROM) --find --min-cells 40
 
-dump: ## 원문 스크립트 덤프 -> script/ja/
+script: strings tbl ## 스크립트 전체 덤프 -> script/ja/ + 번역 골격 script/ko/
+	@$(PYTHON) tools/dumpscript.py $(ROM)
+
+dump: ## (구) 블록 정의 기반 덤프
 	@$(PYTHON) tools/dumptext.py $(ROM) --config $(CONFIG) --out script/ja
 
 charset: ## 번역문에서 사용 문자 추출
@@ -83,4 +86,4 @@ clean: ## 빌드 산출물 삭제
 	@rm -rf $(BUILD)/*.gba $(BUILD)/*.tsv $(BUILD)/*.png $(BUILD)/*.log
 	@echo "정리 완료"
 
-.PHONY: help hooks check scan-ptr scan-text scan-lz tbl tbl-check strings vm grid grid-find dump charset font insert patch build verify run clean
+.PHONY: help hooks check scan-ptr scan-text scan-lz tbl tbl-check strings vm grid grid-find script dump charset font insert patch build verify run clean
