@@ -38,6 +38,12 @@ grid: ## 이름 입력 문자 그리드 -> build/grid_*.tbl (ROM 파생물, 커�
 	@cat $(BUILD)/grid_a.tbl $(BUILD)/grid_b.tbl | grep -v '^#' | sort -u > $(BUILD)/grid_all.tbl
 	@echo "통합: $(BUILD)/grid_all.tbl"
 
+tbl: ## 문자 대응표 생성 -> build/ja.tbl
+	@$(PYTHON) tools/mktbl.py $(ROM) -o $(BUILD)/ja.tbl
+
+tbl-check: strings ## 대응표 커버리지 확인
+	@$(PYTHON) tools/mktbl.py $(ROM) -o $(BUILD)/ja.tbl --coverage
+
 strings: ## 문자열 테이블 탐색 -> build/strtables.tsv
 	@$(PYTHON) tools/obtext.py scan $(ROM) --min-count 32 -o $(BUILD)/strtables.tsv
 
@@ -77,4 +83,4 @@ clean: ## 빌드 산출물 삭제
 	@rm -rf $(BUILD)/*.gba $(BUILD)/*.tsv $(BUILD)/*.png $(BUILD)/*.log
 	@echo "정리 완료"
 
-.PHONY: help hooks check scan-ptr scan-text scan-lz strings vm grid grid-find dump charset font insert patch build verify run clean
+.PHONY: help hooks check scan-ptr scan-text scan-lz tbl tbl-check strings vm grid grid-find dump charset font insert patch build verify run clean
