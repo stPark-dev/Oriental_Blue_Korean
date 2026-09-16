@@ -125,11 +125,22 @@ def compress(raw: bytes, kind: int = LZ77) -> bytes:
 
 
 def scan(rom: bytes, min_size: int = 256, max_size: int = 1 << 20,
-         align: int = 4, kinds: tuple[int, ...] = (LZ77, RLE)):
-    """헤더 후보를 전부 실제로 풀어 보고, 성공한 것만 돌려줍니다."""
+         align: int = 4, kinds: tuple[int, ...] = (LZ77, RLE),
+         offsets=None, progress: bool = False):
+    """헤더 후보를 실제로 풀어 보고, 성공한 것만 돌려줍니다.
+
+    `offsets` 를 주면 그 위치만 검사합니다 (포인터 유도 스캔).
+    16MB ROM 전수 스캔은 수십 분이 걸리므로, `pointer_targets()` 와 함께
+    쓰거나 `max_size` 를 줄이는 편이 훨씬 빠릅니다.
+    """
     n = len(rom)
-    for off in range(0, n - 4, align):
-        if (rom[off] & 0xF0) not in kinds:
+    candidates = range(0, n - 4, align) if offsets is None else offsets
+    step = 0
+    for off in candidates:
+        step += 1
+        if progress and step % 200000 == 0:
+            print(f"  ... 0x{off:06X} 검사 중", file=sys.stderr, flush=True)
+        if off + 4 > n or (rom[off] & 0xF0) not in kinds:
             continue
         size = int.from_bytes(rom[off + 1:off + 4], "little")
         if not (min_size <= size <= max_size):
@@ -140,6 +151,36 @@ def scan(rom: bytes, min_size: int = 256, max_size: int = 1 << 20,
             continue
         if len(raw) == size:
             yield off, used, raw
+
+
+def pointer_targets(rom: bytes, align: int = 4) -> list[int]:
+    """ROM 안의 모든 GBA 포인터가 가리키는 오프셋 (정렬·중복 제거).
+
+    압축 블록은 거의 항상 포인터로 참조되므로, 전수 스캔보다 후보가
+    훨씬 적으면서도 실제 데이터를 놓치지 않습니다.
+    """
+    n = len(rom)
+    targets = set()
+    for off in range(0, n - 4, align):
+        v = int.from_bytes(rom[off:off + 4], "little")
+        if common.ROM_BASE <= v < common.ROM_BASE + n:
+            targets.add(v - common.ROM_BASE)
+    return sorted(targets)
+
+
+def sjis_ratio(data: bytes) -> float:
+    """2바이트 Shift-JIS로 읽히는 비율 — 텍스트 블록 판별용."""
+    ok = i = 0
+    n = len(data)
+    while i + 2 <= n:
+        a, t = data[i], data[i + 1]
+        if (0x81 <= a <= 0x9F or 0xE0 <= a <= 0xEF) and 0x40 <= t <= 0xFC and t != 0x7F:
+            ok += 1
+            i += 2
+        else:
+            i += 1
+    return ok * 2 / max(n, 1)
+
 
 
 def main() -> int:
@@ -154,6 +195,10 @@ def main() -> int:
     s.add_argument("--limit", type=int, default=40)
     s.add_argument("-o", "--out", help="TSV 저장")
     s.add_argument("--dump-dir", help="풀린 블록을 이 디렉터리에 저장")
+    s.add_argument("--via-pointers", action="store_true",
+                   help="ROM 포인터가 가리키는 위치만 검사 (빠름)")
+    s.add_argument("--min-sjis", type=float, default=0.0,
+                   help="Shift-JIS 비율이 이 값 이상인 블록만 출력")
 
     u = sub.add_parser("unpack")
     u.add_argument("rom")
@@ -184,26 +229,40 @@ def main() -> int:
         return 0
 
     rom = common.load(args.rom)
+
+    offsets = None
+    if args.via_pointers:
+        offsets = pointer_targets(rom, args.align)
+        print(f"# 포인터 대상 {len(offsets):,}곳만 검사합니다", file=sys.stderr)
+
     found = []
-    for off, used, raw in scan(rom, args.min, args.max, args.align):
-        found.append((off, used, len(raw), raw))
+    print("오프셋\t압축크기\t원본크기\t압축률\tSJIS")
+    for off, used, raw in scan(rom, args.min, args.max, args.align,
+                               offsets=offsets, progress=True):
+        r = sjis_ratio(raw)
+        if r < args.min_sjis:
+            continue
+        found.append((off, used, len(raw), r))
         if args.dump_dir:
             common.save(os.path.join(args.dump_dir, f"{off:06X}.bin"), raw)
+        if not args.limit or len(found) <= args.limit:
+            print(f"0x{off:06X}\t{used}\t{len(raw)}\t"
+                  f"{used / len(raw) * 100:.0f}%\t{r * 100:.1f}%", flush=True)
 
-    print(f"# 유효 압축 블록 {len(found)}개")
-    print("오프셋\t압축크기\t원본크기\t압축률")
-    for off, used, size, _ in found[:args.limit or len(found)]:
-        print(f"0x{off:06X}\t{used}\t{size}\t{used / size * 100:.0f}%")
+    print(f"\n# 유효 압축 블록 {len(found)}개 / 원본 총 "
+          f"{sum(f[2] for f in found):,}바이트")
     if args.limit and len(found) > args.limit:
-        print(f"... 외 {len(found) - args.limit}개")
+        print(f"# (출력은 {args.limit}개까지. --limit 0 으로 전체 출력)")
 
     if args.out:
-        with open(args.out, "w", encoding="utf-8") as f:
-            f.write("오프셋\t압축크기\t원본크기\n")
-            for off, used, size, _ in found:
-                f.write(f"0x{off:06X}\t{used}\t{size}\n")
+        with open(args.out, "w", encoding="utf-8", newline="\n") as f:
+            f.write("오프셋\t압축크기\t원본크기\tSJIS비율\n")
+            for off, used, size, r in found:
+                f.write(f"0x{off:06X}\t{used}\t{size}\t{r:.4f}\n")
         print(f"저장: {args.out}")
     return 0
+
+
 
 
 if __name__ == "__main__":

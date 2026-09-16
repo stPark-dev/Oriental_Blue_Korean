@@ -27,6 +27,15 @@ scan-text: ## 평문 Shift-JIS 구간 탐색
 scan-lz: ## 압축 블록 탐색
 	@$(PYTHON) tools/gbalz.py scan $(ROM) --min 256 -o $(BUILD)/scan_lz.tsv
 
+grid: ## 이름 입력 문자 그리드 -> build/grid_*.tbl (ROM 파생물, 커밋 안 함)
+	@$(PYTHON) tools/dumpgrid.py $(ROM) 0x08ADEC --count 384 --tbl $(BUILD)/grid_a.tbl
+	@$(PYTHON) tools/dumpgrid.py $(ROM) 0x08B142 --count 597 --tbl $(BUILD)/grid_b.tbl
+	@cat $(BUILD)/grid_a.tbl $(BUILD)/grid_b.tbl | grep -v '^#' | sort -u > $(BUILD)/grid_all.tbl
+	@echo "통합: $(BUILD)/grid_all.tbl"
+
+grid-find: ## 문자 그리드 후보 탐색
+	@$(PYTHON) tools/dumpgrid.py $(ROM) --find --min-cells 40
+
 dump: ## 원문 스크립트 덤프 -> script/ja/
 	@$(PYTHON) tools/dumptext.py $(ROM) --config $(CONFIG) --out script/ja
 
@@ -57,4 +66,4 @@ clean: ## 빌드 산출물 삭제
 	@rm -rf $(BUILD)/*.gba $(BUILD)/*.tsv $(BUILD)/*.png $(BUILD)/*.log
 	@echo "정리 완료"
 
-.PHONY: help check scan-ptr scan-text scan-lz dump charset font insert patch build verify run clean
+.PHONY: help check scan-ptr scan-text scan-lz grid grid-find dump charset font insert patch build verify run clean
