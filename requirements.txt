@@ -1,0 +1,3 @@
+# 핵심 툴(romcheck/scan/dump/insert/patch)은 표준 라이브러리만 사용합니다.
+# 폰트 생성(tools/mkfont.py)에만 Pillow가 필요합니다.
+Pillow>=10.0

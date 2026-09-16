@@ -1,0 +1,33 @@
+# ROM 및 파생 바이너리 — 절대 커밋하지 않습니다
+rom/*
+!rom/.gitkeep
+*.gba
+*.bin
+*.sav
+*.srm
+*.ips
+*.bps
+
+# 빌드 산출물
+build/*
+!build/.gitkeep
+patch/*.ips
+patch/*.bps
+
+# 폰트 원본(라이선스 확인 전까지 미포함)
+font/*.ttf
+font/*.otf
+font/*.bdf
+
+# 파이썬
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# 에디터 / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

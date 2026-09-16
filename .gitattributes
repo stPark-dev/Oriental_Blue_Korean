@@ -1,0 +1,17 @@
+# 리눅스 주 작업 환경 — 텍스트는 전부 LF로 통일
+* text=auto eol=lf
+
+*.py   text eol=lf
+*.md   text eol=lf
+*.txt  text eol=lf
+*.tbl  text eol=lf
+*.json text eol=lf
+Makefile text eol=lf
+
+# 바이너리
+*.png  binary
+*.gba  binary
+*.bin  binary
+*.ips  binary
+*.bps  binary
+*.ttf  binary

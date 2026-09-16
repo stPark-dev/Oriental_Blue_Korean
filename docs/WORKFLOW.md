@@ -1,0 +1,89 @@
+# 작업 흐름
+
+주 작업 환경은 **리눅스**입니다. 모든 툴은 파이썬 3.10+ 표준 라이브러리로 동작하며,
+폰트 생성에만 Pillow가 필요합니다. 외부 ROM 해킹 유틸(flips 등)은 필요 없습니다.
+
+## 준비
+
+```bash
+git clone https://github.com/stPark-dev/Oriental_Blue_Korean.git
+cd Oriental_Blue_Korean
+
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+
+# 본인이 덤프한 일본판 ROM을 배치 (저장소에 포함되지 않습니다)
+cp /경로/오리엔탈블루.gba rom/baserom.gba
+make check          # SHA-1 대조
+```
+
+`make` 만 치면 사용 가능한 타깃이 나옵니다.
+
+## 사이클
+
+```
+ ROM ──scan──▶ 구조 파악 ──dump──▶ script/ja/*.txt
+                                      │
+                                   (번역)
+                                      ▼
+ patch ◀──insert──  script/ko/*.txt ──┘
+```
+
+| 단계 | 명령 | 설명 |
+| --- | --- | --- |
+| 1. 확인 | `make check` | ROM 식별·무결성 |
+| 2. 탐색 | `make scan-ptr` / `scan-text` / `scan-lz` | 포인터·텍스트·압축 블록 후보 |
+| 3. 정의 | `config/blocks.json` 편집 | 찾은 오프셋을 블록으로 등록 |
+| 4. 덤프 | `make dump` | `script/ja/` 에 원문 생성 |
+| 5. 번역 | `script/ko/` 편집 | 아래 형식 참고 |
+| 6. 폰트 | `make font FONT=font/Galmuri9.ttf` | 사용 문자만 서브셋 |
+| 7. 삽입 | `make insert` | `build/patched.gba` |
+| 8. 패치 | `make patch` | `patch/*.bps` |
+| 9. 검증 | `make verify` / `make run` | 재적용 대조 · mGBA 실행 |
+
+## 스크립트 파일 형식
+
+`script/ja/*.txt` (자동 생성)와 `script/ko/*.txt` (사람이 작성)는 같은 형식입니다.
+
+```
+## 0000 @0x1234AB
+안녕하세요.<LINE>
+반갑습니다.<END>
+
+## 0001 @0x1234C0
+...
+```
+
+- `## <인덱스> @<원본오프셋>` 이 항목 시작. **인덱스를 바꾸지 마세요** — 삽입 시 포인터 대응에 씁니다.
+- `<...>` 는 제어 코드. `<$XX>` 는 원시 바이트를 직접 넣습니다.
+- 번역할 때 `script/ja/x.txt` 를 `script/ko/x.txt` 로 복사한 뒤 본문만 고칩니다.
+- 항목을 빈 줄로 두면 삽입 시 건너뜁니다 (원문 유지).
+
+## 한글 폰트
+
+한글 음절 11,172자를 전부 넣을 수는 없으므로 **사용된 글자만 서브셋**합니다.
+
+```bash
+make charset                              # script/ko 에서 사용 문자 추출
+make font FONT=font/Galmuri9.ttf          # 서브셋 폰트 + 미리보기 PNG
+```
+
+권장 비트맵 폰트 (라이선스 확인 후 `font/` 에 직접 배치, 저장소에는 미포함):
+
+- **갈무리 (Galmuri)** — OFL, 9/11px 픽셀 폰트. GBA 해상도(240×160)에 적합
+- **둥근모꼴 / Neo둥근모** — 자유 이용, 16px 고정폭
+
+번역이 늘어나면 문자 집합이 바뀌므로, `make font` 는 **삽입 직전에 다시 돌립니다**.
+
+## 규칙
+
+- **ROM과 패치 결과물은 커밋하지 않습니다** (`.gitignore` 로 차단).
+- 텍스트 파일은 전부 LF (`.gitattributes` 로 강제).
+- `script/ja/` 는 자동 생성물이므로 직접 수정하지 않습니다.
+- 새로 알아낸 ROM 구조는 `docs/ROM_NOTES.md` 에 근거와 함께 남깁니다.
+
+## 번역 지침
+
+- 고유명사는 첫 등장 시 표기를 정하고 이후 통일합니다.
+- 메시지 창 폭 제한이 확인되기 전까지는 원문보다 길어지지 않게 씁니다.
+- 제어 코드 `<...>` 는 위치를 바꾸지 말고 그대로 두세요. 삭제하면 게임이 멈출 수 있습니다.

@@ -47,8 +47,11 @@
 
 | 파트 | 상태 | 비고 |
 | --- | --- | --- |
-| 텍스트 덤프 | 🔧 진행 중 | |
-| 폰트 / 출력 루틴 | ⏳ 대기 | |
+| 툴체인 구축 | ✅ 완료 | 파이썬 전용, 외부 유틸 불필요 |
+| ROM 식별 | ✅ 완료 | `ORIENTALBLUE` / `AORJ` / 128 Mbit |
+| 구조 분석 | 🔧 진행 중 | 스크립트 저장 방식 추적 중 |
+| 텍스트 덤프 | ⏳ 대기 | 블록 위치 확정 후 |
+| 폰트 / 출력 루틴 | ⏳ 대기 | 한글 서브셋 방식 |
 | 메인 시나리오 | ⏳ 대기 | |
 | 서브 이벤트 | ⏳ 대기 | |
 | 시스템 텍스트 | ⏳ 대기 | |
@@ -56,6 +59,39 @@
 | 테스트 | ⏳ 대기 | |
 
 범례: ✅ 완료 · 🔧 진행 중 · ⏳ 대기
+
+분석 과정에서 확인된 ROM 내부 구조는 [`docs/ROM_NOTES.md`](docs/ROM_NOTES.md)에 정리합니다.
+
+---
+
+## 💻 개발 환경
+
+리눅스를 주 작업 환경으로 삼습니다. 툴은 전부 **파이썬 3.10+ 표준 라이브러리**로
+동작하며, 폰트 생성에만 Pillow가 필요합니다. flips 같은 외부 ROM 해킹 유틸은
+설치하지 않아도 됩니다 (IPS/BPS 생성·적용을 자체 구현).
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+
+cp /경로/오리엔탈블루.gba rom/baserom.gba   # 본인이 덤프한 ROM
+make check                                  # SHA-1 대조
+make                                        # 사용 가능한 타깃 목록
+```
+
+| 툴 | 역할 |
+| --- | --- |
+| `tools/romcheck.py` | ROM 식별 · 무결성 확인 |
+| `tools/scan.py` | 포인터 테이블 / Shift-JIS / 엔트로피 스캔 |
+| `tools/gbalz.py` | GBA LZ77 · RLE 압축 해제 및 재압축 |
+| `tools/tbl.py` | 코드-문자 대응 테이블(.tbl) 파서 |
+| `tools/dumptext.py` | ROM → 번역용 텍스트 파일 |
+| `tools/inserttext.py` | 번역문 재삽입 · 포인터 재작성 |
+| `tools/charset.py` | 번역문에서 사용 문자 추출 |
+| `tools/mkfont.py` | 한글 서브셋 비트맵 폰트 생성 |
+| `tools/patch.py` | IPS / BPS 패치 생성 · 적용 |
+
+자세한 작업 흐름은 [`docs/WORKFLOW.md`](docs/WORKFLOW.md)를 참고하세요.
 
 ---
 

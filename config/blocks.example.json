@@ -1,0 +1,21 @@
+{
+  "_주석": "실제 오프셋이 확인되면 이 파일을 config/blocks.json 으로 복사해 채웁니다.",
+  "rom": {
+    "title": "ORIENTALBLUE",
+    "game_code": "AORJ",
+    "sha1": "414cad1aee67ab20f3c133f0259da7e8c3073bbc",
+    "size": 16777216
+  },
+  "free_space": [],
+  "blocks": [
+    {
+      "name": "example_items",
+      "type": "pointer_table",
+      "ptr_table": "0x091C64",
+      "count": 85,
+      "table": "tables/ja.tbl",
+      "ko_table": "tables/ko.tbl",
+      "max_len": 512
+    }
+  ]
+}
