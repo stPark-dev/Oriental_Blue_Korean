@@ -38,6 +38,9 @@ grid: ## 이름 입력 문자 그리드 -> build/grid_*.tbl (ROM 파생물, 커�
 	@cat $(BUILD)/grid_a.tbl $(BUILD)/grid_b.tbl | grep -v '^#' | sort -u > $(BUILD)/grid_all.tbl
 	@echo "통합: $(BUILD)/grid_all.tbl"
 
+vm: ## 이벤트 VM 레코드 요약 (EN=영문판 지정 시 대조)
+	@$(PYTHON) tools/vmrec.py $(ROM) --stats --min-count 8 $(if $(EN),--diff $(EN))
+
 grid-find: ## 문자 그리드 후보 탐색
 	@$(PYTHON) tools/dumpgrid.py $(ROM) --find --min-cells 40
 
@@ -71,4 +74,4 @@ clean: ## 빌드 산출물 삭제
 	@rm -rf $(BUILD)/*.gba $(BUILD)/*.tsv $(BUILD)/*.png $(BUILD)/*.log
 	@echo "정리 완료"
 
-.PHONY: help hooks check scan-ptr scan-text scan-lz grid grid-find dump charset font insert patch build verify run clean
+.PHONY: help hooks check scan-ptr scan-text scan-lz vm grid grid-find dump charset font insert patch build verify run clean
