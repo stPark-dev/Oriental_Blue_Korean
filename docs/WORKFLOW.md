@@ -9,6 +9,8 @@
 git clone https://github.com/stPark-dev/Oriental_Blue_Korean.git
 cd Oriental_Blue_Korean
 
+make hooks          # ROM·대용량 파일 커밋 차단 훅 설치 (권장)
+
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
@@ -77,7 +79,12 @@ make font FONT=font/Galmuri9.ttf          # 서브셋 폰트 + 미리보기 PNG
 
 ## 규칙
 
-- **ROM과 패치 결과물은 커밋하지 않습니다** (`.gitignore` 로 차단).
+- **ROM과 패치 결과물은 커밋하지 않습니다.** `.gitignore` 와 pre-commit 훅으로 이중 차단합니다.
+  - `.gitignore` 는 *이미 추적 중인 파일에는 적용되지 않으므로*, 훅이 마지막 방어선입니다.
+  - 훅은 `.githooks/pre-commit` 에 있고 `make hooks` 로 설치합니다 (`core.hooksPath` 는
+    로컬 설정이라 clone 한 사람마다 한 번씩 실행해야 합니다).
+  - 차단 대상: ROM/패치 확장자(`gba` `nds` `ips` `bps` 등)와 1MB 초과 파일.
+  - 용량 제한만 임시 해제: `ALLOW_BIG=1 git commit ...` (ROM 확장자는 해제되지 않습니다).
 - 텍스트 파일은 전부 LF (`.gitattributes` 로 강제).
 - `script/ja/` 는 자동 생성물이므로 직접 수정하지 않습니다.
 - 새로 알아낸 ROM 구조는 `docs/ROM_NOTES.md` 에 근거와 함께 남깁니다.

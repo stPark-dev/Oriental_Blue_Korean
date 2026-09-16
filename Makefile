@@ -15,6 +15,11 @@ help: ## 사용 가능한 타깃 목록
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
 		| awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
 
+hooks: ## git 훅 설치 (ROM·대용량 파일 커밋 차단)
+	@git config core.hooksPath .githooks
+	@chmod +x .githooks/* 2>/dev/null || true
+	@echo "설치 완료: core.hooksPath = .githooks"
+
 check: ## 원본 ROM 확인 (SHA-1 대조)
 	@$(PYTHON) tools/romcheck.py $(ROM) --expect-sha1 $(SHA1)
 
@@ -66,4 +71,4 @@ clean: ## 빌드 산출물 삭제
 	@rm -rf $(BUILD)/*.gba $(BUILD)/*.tsv $(BUILD)/*.png $(BUILD)/*.log
 	@echo "정리 완료"
 
-.PHONY: help check scan-ptr scan-text scan-lz grid grid-find dump charset font insert patch build verify run clean
+.PHONY: help hooks check scan-ptr scan-text scan-lz grid grid-find dump charset font insert patch build verify run clean
