@@ -114,10 +114,16 @@ def main() -> int:
     total = ok = fail = 0
     empty = 0
     files = 0
+    blob_tables = blob_entries = 0
     for base in sorted(bases):
         try:
             count, entries = obtext.read_table(rom, base)
         except Exception:
+            continue
+        # 크기 접두 바이너리 블롭 테이블은 텍스트가 아니므로 덤프하지 않습니다.
+        if obtext.is_blob_table(rom, base):
+            blob_tables += 1
+            blob_entries += count - 1
             continue
         rows = []
         for idx, off in enumerate(entries, 1):
@@ -139,6 +145,7 @@ def main() -> int:
         files += 1
 
     print(f"\n파일 {files}개 생성")
+    print(f"바이너리 블롭 테이블 {blob_tables}개 제외 (항목 {blob_entries:,}개)")
     print(f"항목 {total:,} / 전개 성공 {ok:,} / 실패 {fail:,}")
     print(f"빈 문자열 {empty:,}개 (번역 대상 아님)")
     print(f"실질 번역 대상 {ok - empty:,}개")

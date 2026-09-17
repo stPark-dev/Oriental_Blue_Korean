@@ -29,6 +29,7 @@ from __future__ import annotations
 import argparse
 import collections
 import os
+import struct
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -63,8 +64,9 @@ def expand(rom: bytes, src: int, budget: int = OUT_LIMIT) -> bytes:
                 p += 2
                 length = (b1 >> 4) + 4
                 dist = ((b1 & 0x0F) << 8) | b2
-                if dist == 0:
-                    raise ExpandError("거리 0")
+                # 거리 0 은 오류가 아닙니다. 0x0800D4F8 은 src = r4 - dist 를
+                # 그대로 쓰므로, 이스케이프 바로 다음부터 length 바이트를 한 번
+                # 더 전개한 뒤 같은 자리에서 정상 전개를 이어갑니다.
                 if length > remaining:
                     length = remaining
                 if run(p - dist, length, depth + 1):
@@ -120,6 +122,32 @@ def scan_tables(rom: bytes, min_count: int = 16, align: int = 4):
         c = plausible_table(rom, base, min_count)
         if c:
             yield base, c
+
+
+def is_blob_table(rom: bytes, base: int, min_entries: int = 8,
+                  ratio: float = 0.5) -> bool:
+    """텍스트가 아니라 **크기 접두 바이너리 블롭** 테이블인지 판정합니다.
+
+    블롭 엔트리는 선두 u32 가 자기 데이터 길이이고, 다음 엔트리까지의 간격이
+    그 길이 + 4 입니다. ROM의 테이블 133개 중 16개가 이 규칙에 100% 맞고
+    나머지는 2% 미만이라, 임계값에 민감하지 않습니다.
+    """
+    try:
+        count = common.u32(rom, base)
+    except (IndexError, struct.error):
+        return False
+    if count - 1 < min_entries:
+        return False
+    offs = sorted({common.u32(rom, base + i * 4) for i in range(1, count)})
+    hit = total = 0
+    for a, b in zip(offs, offs[1:]):
+        gap = b - a
+        if not (0 < gap <= 0x40000):
+            continue
+        total += 1
+        if common.u32(rom, base + a) + 4 == gap:
+            hit += 1
+    return total >= min_entries and hit >= total * ratio
 
 
 def text_score(data: bytes) -> float:
