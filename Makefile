@@ -20,6 +20,9 @@ hooks: ## git 훅 설치 (ROM·대용량 파일 커밋 차단)
 	@chmod +x .githooks/* 2>/dev/null || true
 	@echo "설치 완료: core.hooksPath = .githooks"
 
+test: ## 단위 테스트 (ROM이 있으면 회귀 테스트도 함께)
+	@$(PYTHON) -m unittest discover -s tests -v
+
 check: ## 원본 ROM 확인 (SHA-1 대조)
 	@$(PYTHON) tools/romcheck.py $(ROM) --expect-sha1 $(SHA1)
 
@@ -59,6 +62,12 @@ script: strings tbl ## 스크립트 전체 덤프 -> script/ja/ + 번역 골격 
 dump: ## (구) 블록 정의 기반 덤프
 	@$(PYTHON) tools/dumptext.py $(ROM) --config $(CONFIG) --out script/ja
 
+font-orig: ## 원본 폰트 확인 + 글리프 시트 추출
+	@$(PYTHON) tools/obfont.py verify $(ROM)
+	@$(PYTHON) tools/obfont.py extract $(ROM) --font wide   -o $(BUILD)/font_wide.png
+	@$(PYTHON) tools/obfont.py extract $(ROM) --font small  -o $(BUILD)/font_small.png
+	@$(PYTHON) tools/obfont.py extract $(ROM) --font system -o $(BUILD)/font_system.png
+
 charset: ## 번역문에서 사용 문자 추출
 	@$(PYTHON) tools/charset.py script/ko -o font/charset.txt --freq
 
@@ -86,4 +95,4 @@ clean: ## 빌드 산출물 삭제
 	@rm -rf $(BUILD)/*.gba $(BUILD)/*.tsv $(BUILD)/*.png $(BUILD)/*.log
 	@echo "정리 완료"
 
-.PHONY: help hooks check scan-ptr scan-text scan-lz tbl tbl-check strings vm grid grid-find script dump charset font insert patch build verify run clean
+.PHONY: help hooks test check scan-ptr scan-text scan-lz tbl tbl-check strings vm grid grid-find script dump font-orig charset font insert patch build verify run clean

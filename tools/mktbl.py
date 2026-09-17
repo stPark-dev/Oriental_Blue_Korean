@@ -55,6 +55,13 @@ def cell(rom: bytes, index: int, base: int = CHARSET_BASE) -> str | None:
         return None
 
 
+# 이름 입력 그리드에는 없지만 전각 폰트(0x0D7FFBC)에는 있는 문자입니다.
+# 그리드가 대문자 Ａ-Ｚ 만 제공하므로 소문자가 빠져 있었습니다.
+# 코드 0x151-0x16A 의 글리프를 직접 확인해 대응시켰습니다.
+SUPPLEMENT = {0x151 + i: ch for i, ch in
+              enumerate("ａｂｃｄｅｆｇｈｉｊｋｌｍｎｏｐｑｒｓｔｕｖｗｘｙｚ")}
+
+
 def build(rom: bytes, base: int = CHARSET_BASE, max_code: int = MAX_CODE) -> dict:
     """{코드: 문자} — 코드는 (뱅크<<8)|인덱스 형태의 정수입니다."""
     out = {}
@@ -62,6 +69,8 @@ def build(rom: bytes, base: int = CHARSET_BASE, max_code: int = MAX_CODE) -> dic
         ch = cell(rom, code, base)
         if ch is not None:
             out[code] = ch
+    for code, ch in SUPPLEMENT.items():
+        out.setdefault(code, ch)        # 그리드 값이 우선입니다
     return out
 
 

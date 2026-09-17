@@ -49,9 +49,9 @@
 | --- | --- | --- |
 | 툴체인 구축 | ✅ 완료 | 파이썬 전용, 외부 유틸 불필요 |
 | ROM 식별 | ✅ 완료 | `ORIENTALBLUE` / `AORJ` / 128 Mbit |
-| 구조 분석 | 🔧 진행 중 | 스크립트 저장 방식 추적 중 |
-| 텍스트 덤프 | ⏳ 대기 | 블록 위치 확정 후 |
-| 폰트 / 출력 루틴 | ⏳ 대기 | 한글 서브셋 방식 |
+| 구조 분석 | ✅ 완료 | 스크립트·인코딩·폰트 전부 확정 |
+| 텍스트 덤프 | ✅ 완료 | 텍스트 테이블 117개 / 번역 대상 16,676개 |
+| 폰트 / 출력 루틴 | 🔧 진행 중 | 폰트·출력 경로 확정, 조합형 ASM 패치 설계 중 |
 | 메인 시나리오 | ⏳ 대기 | |
 | 서브 이벤트 | ⏳ 대기 | |
 | 시스템 텍스트 | ⏳ 대기 | |
@@ -76,6 +76,7 @@ pip install -r requirements.txt
 
 cp /경로/오리엔탈블루.gba rom/baserom.gba   # 본인이 덤프한 ROM
 make check                                  # SHA-1 대조
+make test                                   # 단위 테스트
 make                                        # 사용 가능한 타깃 목록
 ```
 
@@ -90,6 +91,10 @@ make                                        # 사용 가능한 타깃 목록
 | `tools/charset.py` | 번역문에서 사용 문자 추출 |
 | `tools/mkfont.py` | 한글 서브셋 비트맵 폰트 생성 |
 | `tools/patch.py` | IPS / BPS 패치 생성 · 적용 |
+| `tools/obtext.py` | 게임 고유 압축 해제 · 문자열 테이블 탐색 |
+| `tools/obfont.py` | 원본 폰트 검증 · 글리프 추출 |
+| `tests/` | `make test` — 단위 + ROM 회귀 테스트 24개 |
+| `tools/dumpscript.py` | 스크립트 전체 덤프 (`make script`) |
 
 자세한 작업 흐름은 [`docs/WORKFLOW.md`](docs/WORKFLOW.md)를 참고하세요.
 
