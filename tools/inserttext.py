@@ -7,8 +7,8 @@
 하는 일
   1. `script/ko/*.txt` 에서 채워진 항목을 모읍니다.
   2. 쓰인 음절의 16×16 글리프와 색인 테이블을 만듭니다.
-  3. 출력 훅(`tools/kohook.py`)을 자유 공간에 놓고, `0x0801C904` 의
-     `bl` 대상 주소만 바꿔 훅을 부르게 합니다.
+  3. 출력 훅(`tools/kohook.py`)을 자유 공간에 놓고, 렌더 루프 두 곳
+     (`0x0801C904`, `0x0801CBF0`)의 `bl` 대상 주소만 바꿉니다.
   4. 번역문을 인코딩해 빈 공간에 쓰고, 문자열 테이블의 상대 오프셋을
      다시 씁니다.
 
@@ -158,20 +158,24 @@ def build_patch(rom: bytearray, ko_dir: str, tables: list[int],
 
     arena = Arena(rom, auto_regions(rom))
     # 훅은 호출 지점에서 bl 사거리 안에 있어야 합니다.
-    hook_at = arena.alloc(256, align=2, near=kohook.CALL_SITE)
+    sites = [(kohook.CALL_SITE, kohook.GET_WIDE, 0, 6),
+             (kohook.CALL_SITE_HALF, kohook.GET_HALF, 8, 6),
+             (kohook.CALL_SITE_MENU, kohook.GET_HALF, 0, 8)]
+    hooks = [arena.alloc(256, align=2, near=site) for site, _, _, _ in sites]
     slot_at = arena.alloc(len(slot))
     glyph_at = arena.alloc(len(glyphs))
+    slot_p, glyph_p = common.off_to_ptr(slot_at), common.off_to_ptr(glyph_at)
 
-    hook = kohook.build(common.off_to_ptr(hook_at),
-                        common.off_to_ptr(slot_at),
-                        common.off_to_ptr(glyph_at))
-    rom[hook_at:hook_at + len(hook)] = hook
     rom[slot_at:slot_at + len(slot)] = slot
     rom[glyph_at:glyph_at + len(glyphs)] = glyphs
 
-    site = kohook.CALL_SITE - common.ROM_BASE
-    rom[site:site + 4] = thumb.bl_bytes(kohook.CALL_SITE,
-                                        common.off_to_ptr(hook_at))
+    # 렌더러마다 원래 부르던 함수·dst 위치·스트림 레지스터가 다릅니다.
+    for at, (site, fb, back, sreg) in zip(hooks, sites):
+        code = kohook.build(common.off_to_ptr(at), slot_p, glyph_p,
+                            fallback=fb, dst_back=back, stream_reg=sreg)
+        rom[at:at + len(code)] = code
+        o = site - common.ROM_BASE
+        rom[o:o + 4] = thumb.bl_bytes(site, common.off_to_ptr(at))
 
     written = entries = 0
     for base, rows in translated.items():
@@ -190,7 +194,7 @@ def build_patch(rom: bytearray, ko_dir: str, tables: list[int],
         "번역 항목": entries,
         "음절": count,
         "문자열 바이트": written,
-        "훅": common.off_to_ptr(hook_at),
+        "훅": [common.off_to_ptr(a) for a in hooks],
         "색인": common.off_to_ptr(slot_at),
         "글리프": common.off_to_ptr(glyph_at),
         "남은 자유 공간": arena.remaining,
@@ -227,7 +231,7 @@ def main() -> int:
     print(f"  번역 항목        {stats['번역 항목']:,}개")
     print(f"  한글 음절        {stats['음절']:,}자 (한도 없음)")
     print(f"  문자열           {stats['문자열 바이트']:,}바이트")
-    print(f"  훅               0x{stats['훅']:08X}")
+    print("  훅               " + " ".join(f"0x{h:08X}" for h in stats['훅']))
     print(f"  색인 테이블      0x{stats['색인']:08X} "
           f"({kofont.SYLLABLES * 2:,}바이트)")
     print(f"  글리프           0x{stats['글리프']:08X} "

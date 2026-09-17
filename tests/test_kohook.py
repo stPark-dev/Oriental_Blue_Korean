@@ -78,8 +78,8 @@ class BuildTest(unittest.TestCase):
         self.assertLess(len(self.code), 256)
 
     def test_레지스터를_지키고_돌아온다(self):
-        self.assertEqual(self.dis[0], "push {r4, r5, lr}")
-        self.assertEqual(self.dis.count("pop {r4, r5, pc}"), 3)
+        self.assertEqual(self.dis[0], "push {r4, r5, r6, lr}")
+        self.assertEqual(self.dis.count("pop {r4, r5, r6, pc}"), 3)
 
     def test_대응하지_않는_코드는_원래_함수로_넘긴다(self):
         self.assertIn(f"bl #{kohook.GET_WIDE:#x}", self.dis)
@@ -102,6 +102,38 @@ class BuildTest(unittest.TestCase):
         d = [f"{i.mnemonic} {i.op_str}" for i in MD.disasm(b, kohook.CALL_SITE)]
         self.assertEqual(d[0], f"bl #{AT:#x}")
 
+
+
+class HalfVariantTest(unittest.TestCase):
+    """두 번째 렌더 루프는 작은 폰트를 부르고 dst 가 버퍼+8 입니다."""
+
+    def setUp(self):
+        if MD is None:
+            self.skipTest("capstone 없음")
+        self.code = kohook.build(AT, SLOT, GLYPH,
+                                 fallback=kohook.GET_HALF, dst_back=8)
+        self.dis = [f"{i.mnemonic} {i.op_str}".strip()
+                    for i in MD.disasm(self.code, AT)]
+
+    def test_한글이_아니면_작은_폰트_함수로_넘긴다(self):
+        self.assertIn(f"bl #{kohook.GET_HALF:#x}", self.dis)
+        self.assertNotIn(f"bl #{kohook.GET_WIDE:#x}", self.dis)
+
+    def test_쓰기_전에_dst_를_되돌린다(self):
+        self.assertEqual(self.dis.count("subs r0, #8"), 2)   # 복사·빈칸 양쪽
+
+    def test_스트림_레지스터를_바꿀_수_있다(self):
+        code = kohook.build(AT, SLOT, GLYPH, stream_reg=8)
+        d = [f"{i.mnemonic} {i.op_str}".strip() for i in MD.disasm(code, AT)]
+        self.assertEqual(d[1], "mov r6, r8")
+        base = kohook.build(AT, SLOT, GLYPH)
+        db = [f"{i.mnemonic} {i.op_str}".strip() for i in MD.disasm(base, AT)]
+        self.assertNotIn("mov r6, r8", db)
+
+    def test_기본_훅은_dst_를_건드리지_않는다(self):
+        base = kohook.build(AT, SLOT, GLYPH)
+        d = [f"{i.mnemonic} {i.op_str}".strip() for i in MD.disasm(base, AT)]
+        self.assertNotIn("subs r0, #8", d)
 
 if __name__ == "__main__":
     unittest.main()

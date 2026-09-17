@@ -32,8 +32,16 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import thumb  # noqa: E402
 
-GET_WIDE = 0x0801C2EC          # 원래 글리프 인출 함수
-CALL_SITE = 0x0801C904         # 여기의 bl 대상만 바꿉니다
+GET_WIDE = 0x0801C2EC          # 큰 글리프 인출 (16바이트)
+GET_HALF = 0x0801C2D0          # 작은 글리프 인출 (8바이트)
+
+# 본문 렌더 루프의 큰 폰트 경로. dst 가 16바이트 버퍼 그대로입니다.
+CALL_SITE = 0x0801C904
+# 두 번째 렌더 루프(0x0801CAC8)의 큰 코드 경로. 여기서는 작은 폰트를 부르고
+# dst 가 버퍼+8 이라, 8을 되돌려 16행을 통째로 씁니다.
+CALL_SITE_HALF = 0x0801CBF0
+# 세 번째 렌더러(메뉴 항목). 스트림 포인터가 r6 이 아니라 **r8** 입니다.
+CALL_SITE_MENU = 0x0801C5E8
 
 LEAD_BANKS = (3, 4)
 TRAIL_BANK = 5
@@ -67,10 +75,20 @@ def decode_pair(lead_c: int, trail_c: int) -> int:
 
 
 def build(at: int, slot_table: int, glyphs: int,
-          get_wide: int = GET_WIDE) -> bytes:
-    """훅 코드를 만듭니다. 주소는 모두 0x08000000 기준입니다."""
+          fallback: int = GET_WIDE, dst_back: int = 0,
+          stream_reg: int = 6) -> bytes:
+    """훅 코드를 만듭니다. 주소는 모두 0x08000000 기준입니다.
+
+    `fallback` 은 한글이 아닌 코드를 넘길 원래 함수입니다.
+    `dst_back` 은 쓰기 전에 dst 에서 뺄 바이트 수입니다 — 호출자가 버퍼
+    중간을 가리키는 자리에서 16행을 통째로 쓰기 위한 것입니다.
+    `stream_reg` 는 그 호출 지점에서 스트림 포인터가 든 레지스터입니다.
+    렌더러마다 다릅니다 (본문 루프는 r6, 메뉴 렌더러는 r8).
+    """
     a = thumb.Asm(at)
-    a.push([4, 5], lr=True)
+    a.push([4, 5, 6], lr=True)
+    if stream_reg != 6:
+        a.mov_hi(6, stream_reg)
     a.lsrs(2, 1, 8)                      # r2 = 뱅크
     a.lsls(3, 1, 24)
     a.lsrs(3, 3, 24)                     # r3 = 파라미터
@@ -122,6 +140,8 @@ def build(at: int, slot_table: int, glyphs: int,
     a.adds(1, 1, 2)                      # + 절반 (0 왼쪽 / 1 오른쪽)
 
     # --- 16행을 한 바이트씩, 두 바이트 간격으로 ---
+    if dst_back:
+        a.subs_imm8(0, dst_back)
     a.movs(3, 0)
     a.mark("copy")
     a.ldrb_imm(5, 1, 0)
@@ -131,9 +151,11 @@ def build(at: int, slot_table: int, glyphs: int,
     a.adds_imm8(3, 1)
     a.cmp_imm(3, 16)
     a.blt("copy")
-    a.pop([4, 5], pc=True)
+    a.pop([4, 5, 6], pc=True)
 
     a.mark("blank")
+    if dst_back:
+        a.subs_imm8(0, dst_back)
     a.movs(5, 0)
     a.movs(3, 0)
     a.mark("clear")
@@ -142,9 +164,9 @@ def build(at: int, slot_table: int, glyphs: int,
     a.adds_imm8(3, 1)
     a.cmp_imm(3, 16)
     a.blt("clear")
-    a.pop([4, 5], pc=True)
+    a.pop([4, 5, 6], pc=True)
 
     a.mark("orig")
-    a.bl(get_wide)
-    a.pop([4, 5], pc=True)
+    a.bl(fallback)
+    a.pop([4, 5, 6], pc=True)
     return a.assemble()

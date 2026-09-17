@@ -87,18 +87,27 @@ class RomPatchTest(unittest.TestCase):
                 out, inserttext.entry_addr(out, TABLE, idx))
             self.assertEqual(before, after, f"#{idx}")
 
-    def test_호출_지점이_훅을_가리킨다(self):
+    SITES = (kohook.CALL_SITE, kohook.CALL_SITE_HALF, kohook.CALL_SITE_MENU)
+
+    def test_렌더러_세_곳이_훅을_가리킨다(self):
         out, stats = self._build("한글")
-        site = kohook.CALL_SITE - common.ROM_BASE
-        self.assertEqual(bytes(out[site:site + 4]),
-                         thumb.bl_bytes(kohook.CALL_SITE, stats["훅"]))
-        self.assertLess(abs(stats["훅"] - kohook.CALL_SITE), 1 << 22)
+        self.assertEqual(len(stats["훅"]), 3)
+        for site, at in zip(self.SITES, stats["훅"]):
+            o = site - common.ROM_BASE
+            self.assertEqual(bytes(out[o:o + 4]),
+                             thumb.bl_bytes(site, at), hex(site))
+            self.assertLess(abs(at - site), 1 << 22)
 
     def test_훅과_테이블이_제자리에_놓인다(self):
         out, stats = self._build("한글")
-        hook = kohook.build(stats["훅"], stats["색인"], stats["글리프"])
-        at = stats["훅"] - common.ROM_BASE
-        self.assertEqual(bytes(out[at:at + len(hook)]), hook)
+        for at, (fb, back, sreg) in zip(stats["훅"],
+                                        ((kohook.GET_WIDE, 0, 6),
+                                         (kohook.GET_HALF, 8, 6),
+                                         (kohook.GET_HALF, 0, 8))):
+            hook = kohook.build(at, stats["색인"], stats["글리프"],
+                                fallback=fb, dst_back=back, stream_reg=sreg)
+            o = at - common.ROM_BASE
+            self.assertEqual(bytes(out[o:o + len(hook)]), hook, hex(at))
 
         for ch in "한글":
             i = ord(ch) - kosyl.FIRST
