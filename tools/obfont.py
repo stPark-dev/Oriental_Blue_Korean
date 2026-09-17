@@ -5,12 +5,16 @@ mGBA GDB 스텁으로 출력 경로를 역추적해 확정한 사양입니다.
 자세한 근거는 `docs/ROM_NOTES.md` 의 "폰트와 글자 출력 경로" 를 보세요.
 
 본문 폰트 두 벌은 **문자 코드로 바로 색인**하는 비압축 1bpp 배열입니다.
+반각/전각이 아니라 **같은 문자 집합의 크기 두 종류**이며, 둘 다 8픽셀 폭입니다.
 
-    반각  0x0D7DFB8   8×8  / 8바이트  / 586자
-    전각  0x0D7FFBC   8×16 / 16바이트 / 494자 (ASCII 구간은 비어 있음)
+    작은  0x0D7DFB8   8×8  / 8바이트  / 586자
+    큰    0x0D7FFBC   8×16 / 16바이트 / 494자 (ASCII 구간은 비어 있음)
+
+490자가 양쪽에 다 들어 있습니다. 본문 렌더러(0x0801C7D8)는 코드가 `0x7F` 이하면
+작은 폰트, 초과면 큰 폰트를 씁니다.
 
 둘 다 행당 1바이트, MSB가 왼쪽 픽셀입니다. 실행 중에는 베이스 주소가 EWRAM
-`0x02001A48`(반각) `0x02001A4C`(전각) 에 들어 있어, **폰트를 ROM 빈 공간으로
+`0x02001A48`(작은) `0x02001A4C`(큰) 에 들어 있어, **폰트를 ROM 빈 공간으로
 옮기고 이 포인터만 바꾸면 크기 제한 없이 교체**할 수 있습니다.
 
 시스템 폰트는 별개입니다 — 본문에 쓰이지 않습니다.
@@ -44,15 +48,15 @@ class Font:
 
 
 # 본문 폰트 (1bpp, 문자 코드 색인)
-SMALL = Font("반각", 0x0D7DFB8, 8, 8, 8)
-WIDE = Font("전각", 0x0D7FFBC, 8, 16, 16)
+SMALL = Font("작은", 0x0D7DFB8, 8, 8, 8)
+LARGE = Font("큰", 0x0D7FFBC, 8, 16, 16)
 # 시스템 폰트 (4bpp, JIS X 0201 색인) — 본문 경로와 무관
 SYSTEM = Font("시스템", 0x00BD7E0, 8, 8, 32, count=0xE0, first=0x20)
 SYSTEM_PALETTE = 0x00BD7C0
 
 # 실행 중 폰트 베이스가 들어 있는 EWRAM 변수
 EWRAM_SMALL_PTR = 0x02001A48
-EWRAM_WIDE_PTR = 0x02001A4C
+EWRAM_LARGE_PTR = 0x02001A4C
 
 GRID_BASE = 0x008ADEC          # 이름 입력 문자 그리드 (셀당 2바이트)
 
@@ -93,18 +97,18 @@ def grid_is_blank(rom: bytes, code: int) -> bool:
 def verify(rom: bytes) -> dict:
     """그리드와 폰트가 같은 색인 체계인지 대조합니다."""
     agree = mismatch = 0
-    for c in range(WIDE.count):
+    for c in range(LARGE.count):
         if 0x20 <= c <= 0x9F:
-            continue          # ASCII·전각영숫자 구간은 반각 폰트가 담당
-        if grid_is_blank(rom, c) == is_empty(rom, WIDE, c):
+            continue          # 이 구간은 작은 폰트가 담당
+        if grid_is_blank(rom, c) == is_empty(rom, LARGE, c):
             agree += 1
         else:
             mismatch += 1
     return {
-        "반각 글리프": len(populated(rom, SMALL)),
-        "전각 글리프": len(populated(rom, WIDE)),
-        "전각 ASCII 빈 글리프": sum(1 for c in range(0x21, 0x7F)
-                               if is_empty(rom, WIDE, c)),
+        "작은 폰트 글리프": len(populated(rom, SMALL)),
+        "큰 폰트 글리프": len(populated(rom, LARGE)),
+        "큰 폰트 ASCII 빈 글리프": sum(1 for c in range(0x21, 0x7F)
+                               if is_empty(rom, LARGE, c)),
         "그리드 일치": agree,
         "그리드 불일치": mismatch,
     }
@@ -134,8 +138,8 @@ def main() -> int:
     e = sub.add_parser("extract", help="글리프 시트 PNG 출력")
     e.add_argument("rom")
     e.add_argument("-o", "--out", default="build/font.png")
-    e.add_argument("--font", choices=("wide", "small", "system"),
-                   default="wide")
+    e.add_argument("--font", choices=("large", "small", "system"),
+                   default="large")
     e.add_argument("--raw", help="글리프 원본 바이트를 이 파일로 저장")
 
     args = ap.parse_args()
@@ -144,13 +148,13 @@ def main() -> int:
     if args.cmd == "verify":
         for k, val in verify(rom).items():
             print(f"  {k:<18} {val}")
-        for f in (SMALL, WIDE, SYSTEM):
+        for f in (SMALL, LARGE, SYSTEM):
             bpp = 4 if f is SYSTEM else 1
             print(f"\n{f.name:<4} 0x{f.base:07X} / {f.width}×{f.height} {bpp}bpp"
                   f" / {f.stride}바이트 / {f.count * f.stride:,}바이트")
         return 0
 
-    font = {"wide": WIDE, "small": SMALL, "system": SYSTEM}[args.font]
+    font = {"large": LARGE, "small": SMALL, "system": SYSTEM}[args.font]
     if font is SYSTEM:
         glyphs = [system_glyph(rom, c)
                   for c in range(font.first, font.first + font.count)]

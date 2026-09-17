@@ -64,7 +64,7 @@ dump: ## (구) 블록 정의 기반 덤프
 
 font-orig: ## 원본 폰트 확인 + 글리프 시트 추출
 	@$(PYTHON) tools/obfont.py verify $(ROM)
-	@$(PYTHON) tools/obfont.py extract $(ROM) --font wide   -o $(BUILD)/font_wide.png
+	@$(PYTHON) tools/obfont.py extract $(ROM) --font large  -o $(BUILD)/font_wide.png
 	@$(PYTHON) tools/obfont.py extract $(ROM) --font small  -o $(BUILD)/font_small.png
 	@$(PYTHON) tools/obfont.py extract $(ROM) --font system -o $(BUILD)/font_system.png
 

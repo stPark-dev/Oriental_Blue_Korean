@@ -13,8 +13,11 @@ ROM 분석으로 확인한 사양::
               0x100–0x1FF `01 XX` 2바이트로 등장
               0x200–0x2FF `02 XX` 2바이트로 등장
 
-    제어코드 01–05 는 뒤에 1바이트를 동반합니다. 01/02 는 위와 같이 문자
-    뱅크 선택자이고, 03/04/05 는 서식 제어로 보입니다.
+    본문 렌더러(0x0801C7D8)의 뱅크 계산은 `code = (byte << 8) | param` 으로
+    01–05 에 대해 완전히 일반적입니다. 즉 코드 공간은 **0x000–0x5FF(1,536칸)**
+    이고, 그리드가 채우는 것은 그중 앞의 0x300 칸뿐입니다.
+    03/04/05 는 텍스트 테이블에서 **한 번도 쓰이지 않습니다** (뱅크 3·4·5 가
+    통째로 비어 있음).
     0x00 은 문자열 종결자, 0x0A 는 개행입니다.
 
 검증: 이 대응표로 문자열을 디코딩하면 몬스터·인물 이름이 정상적인 일본어로
@@ -55,11 +58,16 @@ def cell(rom: bytes, index: int, base: int = CHARSET_BASE) -> str | None:
         return None
 
 
-# 이름 입력 그리드에는 없지만 전각 폰트(0x0D7FFBC)에는 있는 문자입니다.
+# 이름 입력 그리드에는 없지만 큰 폰트(0x0D7FFBC)에는 있는 문자입니다.
 # 그리드가 대문자 Ａ-Ｚ 만 제공하므로 소문자가 빠져 있었습니다.
 # 코드 0x151-0x16A 의 글리프를 직접 확인해 대응시켰습니다.
 SUPPLEMENT = {0x151 + i: ch for i, ch in
               enumerate("ａｂｃｄｅｆｇｈｉｊｋｌｍｎｏｐｑｒｓｔｕｖｗｘｙｚ")}
+# 코드 0x20 은 그리드에서 빈칸이지만 본문에서 865회 쓰입니다. 작은 폰트의
+# 글리프가 완전히 비어 있어(8바이트 전부 0) 공백 문자입니다.
+SUPPLEMENT[0x20] = " "
+# 0x2E6 은 그리드 밖 한자입니다. 글리프를 직접 확인했습니다.
+SUPPLEMENT[0x2E6] = "宿"
 
 
 def build(rom: bytes, base: int = CHARSET_BASE, max_code: int = MAX_CODE) -> dict:
@@ -99,9 +107,9 @@ def write_tbl(path: str, table: dict, rom_name: str) -> int:
                 continue
             hexcode = encode_bytes(code).hex().upper()
             f.write(f"{hexcode}={table[code]}\n")
-        f.write("\n# 서식 제어 (파라미터 1바이트 동반, 의미 미확인)\n")
+        f.write("\n# 뱅크 03-05 (본문 미사용 — 한글 코드 공간 후보)\n")
         for c in FORMAT_CODES:
-            f.write(f"# {c:02X}XX=<FMT{c}:XX>\n")
+            f.write(f"# {c:02X}XX = 코드 0x{c:X}XX\n")
     return skipped
 
 

@@ -31,6 +31,15 @@ class SupplementTest(unittest.TestCase):
             self.assertEqual(self.table.get(0x151 + i), ch,
                              f"코드 0x{0x151 + i:03X}")
 
+    def test_코드_0x20_은_공백이다(self):
+        # 그리드에서는 빈칸이지만 본문에서 865회 쓰이고,
+        # 작은 폰트의 글리프가 완전히 비어 있다 = 공백
+        self.assertEqual(self.table.get(0x20), " ")
+
+    def test_코드_0x2E6_은_한자_宿_이다(self):
+        # 그리드 밖 한자. 글리프를 직접 확인했고 본문에서 4회 쓰인다
+        self.assertEqual(self.table.get(0x2E6), "宿")
+
     def test_그리드에서_읽은_문자는_그대로_유지된다(self):
         self.assertEqual(self.table[0xAB], "あ")
         self.assertEqual(self.table[0xB5], "さ")
