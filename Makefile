@@ -7,6 +7,7 @@ CONFIG  ?= config/blocks.json
 BUILD   ?= build
 PATCHED := $(BUILD)/patched.gba
 PATCH   ?= patch/oriental_blue_ko.bps
+FONT    ?= font/Galmuri14.ttf
 SHA1    ?= 414cad1aee67ab20f3c133f0259da7e8c3073bbc
 
 .DEFAULT_GOAL := help
@@ -71,13 +72,12 @@ font-orig: ## 원본 폰트 확인 + 글리프 시트 추출
 charset: ## 번역문에서 사용 문자 추출
 	@$(PYTHON) tools/charset.py script/ko -o font/charset.txt --freq
 
-font: charset ## 한글 서브셋 폰트 생성 (FONT=... 로 TTF 지정)
-	@test -n "$(FONT)" || (echo "FONT=경로/폰트.ttf 를 지정하세요"; exit 1)
-	@$(PYTHON) tools/mkfont.py $(FONT) font/charset.txt -o $(BUILD)/kofont \
-		--size 12 --cell 12x12 --bpp 1 --preview $(BUILD)/kofont.png
+font: ## 한글 글리프 미리보기 -> build/kofont.png
+	@$(PYTHON) tools/kofont.py $(ROM) --ttf $(FONT) --preview $(BUILD)/kofont.png
 
-insert: ## 번역문 재삽입 -> build/patched.gba
-	@$(PYTHON) tools/inserttext.py $(ROM) $(PATCHED) --config $(CONFIG)
+insert: strings ## 번역문 + 한글 폰트 삽입 -> build/patched.gba
+	@test -f $(FONT) || (echo "한글 TTF 가 없습니다: $(FONT)"; exit 1)
+	@$(PYTHON) tools/inserttext.py $(ROM) $(PATCHED) --ttf $(FONT)
 
 patch: insert ## 배포용 BPS 패치 생성
 	@$(PYTHON) tools/patch.py make $(ROM) $(PATCHED) $(PATCH)

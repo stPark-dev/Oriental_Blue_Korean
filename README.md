@@ -51,8 +51,8 @@
 | ROM 식별 | ✅ 완료 | `ORIENTALBLUE` / `AORJ` / 128 Mbit |
 | 구조 분석 | ✅ 완료 | 스크립트·인코딩·폰트 전부 확정 |
 | 텍스트 덤프 | ✅ 완료 | 텍스트 테이블 117개 / 번역 대상 16,674개 |
-| 폰트 / 출력 루틴 | 🔧 진행 중 | 뱅크 3에 한글 출력 검증 완료, 인코딩 방식 결정 중 |
-| 메인 시나리오 | ⏳ 대기 | |
+| 폰트 / 출력 루틴 | ✅ 완료 | 한글 폰트 생성·삽입 자동화, 최대 699음절 |
+| 메인 시나리오 | ⏳ 대기 | 번역 대상 16,674항목 |
 | 서브 이벤트 | ⏳ 대기 | |
 | 시스템 텍스트 | ⏳ 대기 | |
 | 그래픽 | ⏳ 대기 | |
@@ -75,6 +75,7 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
 cp /경로/오리엔탈블루.gba rom/baserom.gba   # 본인이 덤프한 ROM
+cp /경로/Galmuri14.ttf font/                # 한글 폰트 (OFL, 저장소 미포함)
 make check                                  # SHA-1 대조
 make test                                   # 단위 테스트
 make                                        # 사용 가능한 타깃 목록
@@ -87,12 +88,14 @@ make                                        # 사용 가능한 타깃 목록
 | `tools/gbalz.py` | GBA LZ77 · RLE 압축 해제 및 재압축 |
 | `tools/tbl.py` | 코드-문자 대응 테이블(.tbl) 파서 |
 | `tools/dumptext.py` | ROM → 번역용 텍스트 파일 |
-| `tools/inserttext.py` | 번역문 재삽입 · 포인터 재작성 |
+| `tools/inserttext.py` | 번역문 + 한글 폰트 삽입 |
 | `tools/charset.py` | 번역문에서 사용 문자 추출 |
-| `tools/mkfont.py` | 한글 서브셋 비트맵 폰트 생성 |
 | `tools/patch.py` | IPS / BPS 패치 생성 · 적용 |
 | `tools/obtext.py` | 게임 고유 압축 해제 · 문자열 테이블 탐색 |
 | `tools/obfont.py` | 원본 폰트 검증 · 글리프 추출 |
+| `tools/kocode.py` | 한글 코드 공간 모델 · 음절 배정 |
+| `tools/koenc.py` | 번역문 → 게임 바이트열 인코딩 |
+| `tools/kofont.py` | 한글 글리프 생성 · 폰트 재배치 |
 | `tests/` | `make test` — 단위 + ROM 회귀 테스트 24개 |
 | `tools/dumpscript.py` | 스크립트 전체 덤프 (`make script`) |
 
