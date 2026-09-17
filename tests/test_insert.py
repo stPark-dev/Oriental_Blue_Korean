@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                 "..", "tools"))
 import common  # noqa: E402
 import inserttext  # noqa: E402
+import kocode  # noqa: E402
 import kofont  # noqa: E402
 import obtext  # noqa: E402
 
@@ -55,6 +56,9 @@ class RomPatchTest(unittest.TestCase):
 
             self.assertEqual(stats["번역 항목"], 1)
             self.assertEqual(stats["음절"], 2)
+            # 한도는 예약을 뺀 실제 가용 코드 수의 절반이어야 한다
+            self.assertLessEqual(stats["음절 한도"], kocode.capacity())
+            self.assertGreater(stats["음절 한도"], 0)
 
             # 테이블 엔트리가 새 위치를 가리키고, 전개하면 코드 4개 + 종결자
             data = obtext.expand(out, inserttext.entry_addr(out, TABLE, INDEX))

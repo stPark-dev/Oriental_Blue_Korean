@@ -160,6 +160,7 @@ def build_patch(rom: bytearray, ko_dir: str, tables: list[int],
     text_all = "".join(t for rows in translated.values() for t in rows.values())
     syllables = [c for c in dict.fromkeys(text_all) if kocode.is_syllable(c)]
     pool = kocode.usable_codes()
+    free = [c for c in pool if c not in reserved]
     try:
         ko_map = kocode.allocate("".join(syllables), pool, reserved)
     except kocode.OutOfCodes as e:
@@ -189,6 +190,7 @@ def build_patch(rom: bytearray, ko_dir: str, tables: list[int],
         "번역 항목": entries,
         "음절": len(ko_map),
         "배정": ko_map,
+        "음절 한도": len(free) // 2,
         "예약 코드": reserved,
         "문자열 바이트": written,
         "폰트 위치": at + 4,
@@ -216,7 +218,6 @@ def main() -> int:
               open(args.tables, encoding="utf-8").read().splitlines()[1:]]
     tables = [t for t in tables if not obtext.is_blob_table(rom, t)]
 
-    print(f"배정 가능 음절 {kocode.capacity()}개")
     try:
         rom, stats = build_patch(rom, args.ko, tables, args.ttf,
                                  args.size, args.top)
@@ -225,8 +226,9 @@ def main() -> int:
         return 1
 
     print(f"  번역 항목        {stats['번역 항목']:,}개")
-    print(f"  한글 음절        {stats['음절']:,}자 "
-          f"/ 여유 {kocode.capacity() - len(stats['예약 코드']) // 2:,}")
+    limit = stats["음절 한도"]
+    print(f"  한글 음절        {stats['음절']:,}자 / 한도 {limit:,}자 "
+          f"({stats['음절'] / limit:.0%})")
     print(f"  예약 코드        {len(stats['예약 코드']):,}개 (원문 글리프 보존)")
     print(f"  문자열           {stats['문자열 바이트']:,}바이트")
     print(f"  폰트             0x{stats['폰트 위치']:07X} "

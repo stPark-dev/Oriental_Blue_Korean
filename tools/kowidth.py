@@ -1,0 +1,120 @@
+#!/usr/bin/env python3
+"""번역문이 원문보다 넓지 않은지 검사합니다.
+
+이 게임은 **모든 글자가 8픽셀 폭 칸 하나**를 씁니다 (작은 폰트 8×8,
+큰 폰트 8×16 — 높이만 다릅니다). 한글은 16×16 이라 **칸 두 개**를 씁니다.
+
+그래서 글자 수를 줄여도 폭은 넘칠 수 있습니다::
+
+    こうげき力   5글자 = 5칸
+    공격력을     4글자 = 8칸   <- 더 넓다
+
+메시지 창 폭을 넘기면 글자가 잘리므로, 삽입 전에 원문 폭과 비교합니다.
+
+    python3 tools/kowidth.py            # script/ko 전체 검사
+"""
+from __future__ import annotations
+
+import argparse
+import glob
+import os
+import re
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import kocode  # noqa: E402
+from script_io import ScriptFile  # noqa: E402
+
+TAG_RE = re.compile(r"<\$([0-9A-Fa-f]{2,3})>")
+# <$1F> 뒤에 붙는 printf 서식: -, 0, 자리수, 변환문자
+FMT_RE = re.compile(r"-?0?(\d*)([a-zA-Z])")
+
+
+def cells(text: str) -> int:
+    """한 줄이 차지하는 칸 수 (8픽셀 단위)."""
+    total = 0
+    i = 0
+    while i < len(text):
+        m = TAG_RE.match(text, i)
+        if m:
+            i = m.end()
+            if int(m.group(1), 16) != 0x1F:
+                continue          # 그려지지 않는 제어 코드
+            f = FMT_RE.match(text, i)
+            if f:
+                total += int(f.group(1)) if f.group(1) else (
+                    0 if f.group(2) in "sc" else 1)
+                i = f.end()
+            continue
+        total += 2 if kocode.is_syllable(text[i]) else 1
+        i += 1
+    return total
+
+
+def line_cells(text: str) -> list[int]:
+    return [cells(line) for line in text.split("\n")]
+
+
+def check(ja: str, ko: str) -> list[tuple[int, int, int]]:
+    """원문보다 넓은 줄을 (줄번호, 번역 칸, 원문 칸) 으로 돌려줍니다."""
+    a, b = line_cells(ja), line_cells(ko)
+    out = []
+    for i, w in enumerate(b):
+        limit = a[i] if i < len(a) else 0
+        if w > limit:
+            out.append((i, w, limit))
+    return out
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="번역문 폭 검사")
+    ap.add_argument("--ja", default="script/ja")
+    ap.add_argument("--ko", default="script/ko")
+    ap.add_argument("--limit", type=int, default=30, help="출력할 최대 건수")
+    ap.add_argument("--max-cells", type=int, default=26,
+                    help="한 줄 절대 한계 (기본 26칸 = 208픽셀)")
+    args = ap.parse_args()
+
+    total = over = 0
+    shown = 0
+    hard: list[tuple[str, int, int, str]] = []
+    for path in sorted(glob.glob(os.path.join(args.ko, "*.txt"))):
+        name = os.path.basename(path)
+        ja_path = os.path.join(args.ja, name)
+        if not os.path.exists(ja_path):
+            continue
+        ja = {e.index: e.text for e in ScriptFile.read(ja_path).entries}
+        for e in ScriptFile.read(path).entries:
+            if not e.text.strip():
+                continue
+            total += 1
+            for w, line in zip(line_cells(e.text), e.text.split("\n")):
+                if w > args.max_cells:
+                    hard.append((name, e.index, w, line))
+            bad = check(ja.get(e.index, ""), e.text)
+            if not bad:
+                continue
+            over += 1
+            if shown < args.limit:
+                shown += 1
+                for ln, w, lim in bad:
+                    print(f"  {name} #{e.index:04d} {ln + 1}번째 줄: "
+                          f"{w}칸 > 원문 {lim}칸")
+                    print(f"      원문 {ja.get(e.index, '').splitlines()[ln] if ln < len(ja.get(e.index, '').splitlines()) else ''!r}")
+                    print(f"      번역 {e.text.splitlines()[ln]!r}")
+    print(f"\n검사 {total:,}개 / 원문보다 넓은 항목 {over:,}개")
+    if shown < over:
+        print(f"(…외 {over - shown}건)")
+    print("  (원문 폭은 참고값입니다. 실제 한계는 메시지 창 폭입니다.)")
+
+    if hard:
+        print(f"\n[!] {args.max_cells}칸을 넘겨 확실히 잘리는 줄 {len(hard)}개")
+        for name, idx, w, line in sorted(hard, key=lambda x: -x[2]):
+            print(f"  {w}칸  {name} #{idx:04d}  {line}")
+    else:
+        print(f"\n{args.max_cells}칸을 넘기는 줄 없음")
+    return 1 if hard else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
