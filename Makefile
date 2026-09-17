@@ -71,9 +71,6 @@ font-orig: ## 원본 폰트 확인 + 글리프 시트 추출
 	@$(PYTHON) tools/obfont.py extract $(ROM) --font small  -o $(BUILD)/font_small.png
 	@$(PYTHON) tools/obfont.py extract $(ROM) --font system -o $(BUILD)/font_system.png
 
-charset: ## 번역문에서 사용 문자 추출
-	@$(PYTHON) tools/charset.py script/ko -o font/charset.txt --freq
-
 font: ## 한글 글리프 미리보기 -> build/kofont.png
 	@$(PYTHON) tools/kofont.py $(ROM) --ttf $(FONT) --preview $(BUILD)/kofont.png
 
@@ -100,4 +97,4 @@ clean: ## 빌드 산출물 삭제
 	@rm -rf $(BUILD)/*.gba $(BUILD)/*.tsv $(BUILD)/*.png $(BUILD)/*.log
 	@echo "정리 완료"
 
-.PHONY: help hooks test check width scan-ptr scan-text scan-lz tbl tbl-check strings vm grid grid-find script dump font-orig charset font insert patch build verify run clean
+.PHONY: help hooks test check width scan-ptr scan-text scan-lz tbl tbl-check strings vm grid grid-find script dump font-orig font insert patch build verify run clean
