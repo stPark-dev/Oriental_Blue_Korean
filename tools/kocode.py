@@ -67,15 +67,17 @@ def allocate(text: str, pool: list[int],
     """
     reserved = reserved or set()
     free = [c for c in pool if c not in reserved]
+    want = [c for c in dict.fromkeys(text) if is_syllable(c)]
     out: dict[str, tuple[int, int]] = {}
     i = 0
-    for ch in text:
-        if not is_syllable(ch) or ch in out:
-            continue
+    for ch in want:
         if i + 1 >= len(free):
             raise OutOfCodes(
-                f"코드 공간 부족: '{ch}' 부터 배정하지 못했습니다 "
-                f"(음절 {len(out)}개 배정, 남은 코드 {len(free) - i}개)")
+                f"코드 공간 부족 — 음절 {len(want)}자가 필요한데 {len(free) // 2}자만 "
+                f"들어갑니다 ({len(want) - len(free) // 2}자 초과). "
+                f"'{ch}' 부터 배정하지 못했습니다. "
+                f"절대 상한은 {len(pool) // 2}자이고, 미번역 원문이 "
+                f"코드 {len([c for c in pool if c in reserved])}개를 예약 중입니다")
         out[ch] = (free[i], free[i + 1])
         i += 2
     return out

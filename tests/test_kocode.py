@@ -65,10 +65,13 @@ class AllocateTest(unittest.TestCase):
         self.assertEqual(m["한"], (0x301, 0x302))
         self.assertEqual(m["글"], (0x303, 0x304))
 
-    def test_공간이_모자라면_알려준다(self):
+    def test_공간이_모자라면_부족분을_알려준다(self):
         with self.assertRaises(kocode.OutOfCodes) as cm:
             kocode.allocate("한글", pool=[0x301, 0x302])
-        self.assertIn("글", str(cm.exception))
+        msg = str(cm.exception)
+        self.assertIn("글", msg)
+        self.assertIn("2자가 필요", msg)
+        self.assertIn("1자 초과", msg)
 
     def test_예약된_코드는_비켜_간다(self):
         m = kocode.allocate("가", pool=[0x301, 0x302, 0x303, 0x304],
