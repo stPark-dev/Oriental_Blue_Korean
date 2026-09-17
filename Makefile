@@ -22,6 +22,8 @@ hooks: ## git 훅 설치 (ROM·대용량 파일 커밋 차단)
 	@echo "설치 완료: core.hooksPath = .githooks"
 
 test: ## 단위 테스트 (ROM이 있으면 회귀 테스트도 함께)
+	@$(PYTHON) -c "import capstone" 2>/dev/null \
+		|| echo "[!] capstone 이 없어 어셈블러 테스트를 건너뜁니다 — pip install -r requirements.txt"
 	@$(PYTHON) -m unittest discover -s tests -v
 
 check: ## 원본 ROM 확인 (SHA-1 대조)

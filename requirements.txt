@@ -1,6 +1,7 @@
 # 핵심 툴(romcheck/scan/dump/insert/patch)은 표준 라이브러리만 사용합니다.
-# 폰트 생성(tools/mkfont.py)에만 Pillow가 필요합니다.
+# 폰트 생성·글리프 렌더(tools/kofont.py)에 Pillow가 필요합니다.
 Pillow>=10.0
 
-# ROM 코드 분석(tools/disasm.py)에만 필요합니다.
+# ROM 코드 분석(tools/disasm.py)과 어셈블러 테스트에 필요합니다.
+# 없으면 tests/test_thumb.py, tests/test_kohook.py 가 건너뛰어집니다.
 capstone>=5.0
