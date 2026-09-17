@@ -55,6 +55,11 @@ def line_cells(text: str) -> list[int]:
     return [cells(line) for line in text.split("\n")]
 
 
+def is_index_data(text: str) -> bool:
+    """`이름／읽기` 형태인지. 정렬용 색인이라 화면에 그대로 나오지 않습니다."""
+    return "／" in text
+
+
 def check(ja: str, ko: str) -> list[tuple[int, int, int]]:
     """원문보다 넓은 줄을 (줄번호, 번역 칸, 원문 칸) 으로 돌려줍니다."""
     a, b = line_cells(ja), line_cells(ko)
@@ -88,9 +93,10 @@ def main() -> int:
             if not e.text.strip():
                 continue
             total += 1
-            for w, line in zip(line_cells(e.text), e.text.split("\n")):
-                if w > args.max_cells:
-                    hard.append((name, e.index, w, line))
+            if not is_index_data(e.text):
+                for w, line in zip(line_cells(e.text), e.text.split("\n")):
+                    if w > args.max_cells:
+                        hard.append((name, e.index, w, line))
             bad = check(ja.get(e.index, ""), e.text)
             if not bad:
                 continue
@@ -112,7 +118,8 @@ def main() -> int:
         for name, idx, w, line in sorted(hard, key=lambda x: -x[2]):
             print(f"  {w}칸  {name} #{idx:04d}  {line}")
     else:
-        print(f"\n{args.max_cells}칸을 넘기는 줄 없음")
+        print(f"\n{args.max_cells}칸을 넘기는 줄 없음 "
+              "(`이름／읽기` 색인 데이터는 검사에서 뺍니다)")
     return 1 if hard else 0
 
 

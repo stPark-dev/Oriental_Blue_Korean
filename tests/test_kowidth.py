@@ -41,6 +41,14 @@ class CellsTest(unittest.TestCase):
         self.assertEqual(kowidth.line_cells("가나\n다"), [4, 2])
 
 
+class IndexDataTest(unittest.TestCase):
+    """`이름／읽기` 는 정렬용 색인 데이터라 화면 폭과 무관합니다."""
+
+    def test_슬래시가_들어간_항목은_색인으로_본다(self):
+        self.assertTrue(kowidth.is_index_data("보통의　검／보통의　검"))
+        self.assertFalse(kowidth.is_index_data("보통의　검"))
+
+
 class CheckTest(unittest.TestCase):
     def test_원문보다_넓으면_잡아낸다(self):
         # 원문 6칸, 번역 8칸
