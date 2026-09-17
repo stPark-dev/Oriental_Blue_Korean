@@ -76,7 +76,7 @@ def decode_pair(lead_c: int, trail_c: int) -> int:
 
 def build(at: int, slot_table: int, glyphs: int,
           fallback: int = GET_WIDE, dst_back: int = 0,
-          stream_reg: int = 6) -> bytes:
+          stream_reg: int = 6, small: bool = False) -> bytes:
     """훅 코드를 만듭니다. 주소는 모두 0x08000000 기준입니다.
 
     `fallback` 은 한글이 아닌 코드를 넘길 원래 함수입니다.
@@ -84,7 +84,12 @@ def build(at: int, slot_table: int, glyphs: int,
     중간을 가리키는 자리에서 16행을 통째로 쓰기 위한 것입니다.
     `stream_reg` 는 그 호출 지점에서 스트림 포인터가 든 레지스터입니다.
     렌더러마다 다릅니다 (본문 루프는 r6, 메뉴 렌더러는 r8).
+    `small` 은 8행 렌더러용입니다 — 글리프가 8바이트이고, 음절을 앞 코드 칸에
+    만 그리고 뒤 코드 칸은 비웁니다 (8×8 에 16×16 이 안 들어가므로).
     """
+    rows = 8 if small else 16
+    gshift = 3 if small else 5            # 슬롯 × 8 또는 × 32
+    gstep = 1 if small else 2
     a = thumb.Asm(at)
     a.push([4, 5, 6], lr=True)
     if stream_reg != 6:
@@ -108,6 +113,8 @@ def build(at: int, slot_table: int, glyphs: int,
 
     # --- 뒤 코드: 앞 코드를 되짚는다 ---
     a.mark("trail")
+    if small:
+        a.b("blank")                     # 8×8 에서는 뒤 칸을 비운다
     a.subs_imm3(2, 6, 4)
     a.ldrb_imm(4, 2, 0)                  # r4 = 앞 뱅크   ([r6-4])
     a.ldrb_imm(5, 2, 1)                  # r5 = 앞 파라미터([r6-3])
@@ -135,9 +142,10 @@ def build(at: int, slot_table: int, glyphs: int,
     a.cmp_imm(4, 0)
     a.beq("blank")                       # 쓰지 않는 음절
     a.ldr_pool(1, glyphs)
-    a.lsls(4, 4, 5)                      # 슬롯 × 32
+    a.lsls(4, 4, gshift)                 # 슬롯 × 글리프 크기
     a.adds(1, 1, 4)
-    a.adds(1, 1, 2)                      # + 절반 (0 왼쪽 / 1 오른쪽)
+    if not small:
+        a.adds(1, 1, 2)                  # + 절반 (0 왼쪽 / 1 오른쪽)
 
     # --- 16행을 한 바이트씩, 두 바이트 간격으로 ---
     if dst_back:
@@ -146,10 +154,10 @@ def build(at: int, slot_table: int, glyphs: int,
     a.mark("copy")
     a.ldrb_imm(5, 1, 0)
     a.strb_imm(5, 0, 0)
-    a.adds_imm8(1, 2)
+    a.adds_imm8(1, gstep)
     a.adds_imm8(0, 1)
     a.adds_imm8(3, 1)
-    a.cmp_imm(3, 16)
+    a.cmp_imm(3, rows)
     a.blt("copy")
     a.pop([4, 5, 6], pc=True)
 
@@ -162,7 +170,7 @@ def build(at: int, slot_table: int, glyphs: int,
     a.strb_imm(5, 0, 0)
     a.adds_imm8(0, 1)
     a.adds_imm8(3, 1)
-    a.cmp_imm(3, 16)
+    a.cmp_imm(3, rows)
     a.blt("clear")
     a.pop([4, 5, 6], pc=True)
 

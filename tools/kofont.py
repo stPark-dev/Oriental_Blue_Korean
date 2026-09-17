@@ -59,6 +59,26 @@ def pack_glyph(grid: list[list[int]]) -> bytes:
     return bytes(out)
 
 
+def used_syllables(syllables) -> list[str]:
+    """슬롯 번호의 근거가 되는 정렬 순서. 표마다 같아야 합니다."""
+    return sorted({c for c in syllables if kosyl.FIRST <= ord(c) <= kosyl.LAST})
+
+
+def pack_glyph8(grid: list[list[int]]) -> bytes:
+    """8×8 격자를 8바이트로. 행마다 1바이트, MSB 가 왼쪽입니다."""
+    return bytes(sum(row[x] << (7 - x) for x in range(8)) for row in grid[:8])
+
+
+def build_small_glyphs(ttf: str, syllables, size: int, top: int) -> bytes:
+    """8행 렌더러용 8×8 글리프. 슬롯 번호는 큰 표와 같습니다."""
+    used = used_syllables(syllables)
+    grids = render(ttf, used, size, top, cell=8)
+    out = bytearray(8)                         # 0번 슬롯 = 빈 글리프
+    for ch in used:
+        out += pack_glyph8(grids[ch])
+    return bytes(out)
+
+
 def build_syllable_tables(ttf: str, syllables, size: int, top: int
                           ) -> tuple[bytes, bytes, int]:
     """쓰는 음절만 글리프로 만들고 색인 테이블과 함께 돌려줍니다.
@@ -66,7 +86,7 @@ def build_syllable_tables(ttf: str, syllables, size: int, top: int
     (색인 테이블, 글리프, 음절 수). 색인은 음절 번호 -> 슬롯(u16) 이고
     슬롯 0 은 "쓰지 않음" 입니다. 글리프 0번 자리는 비워 둡니다.
     """
-    used = sorted({c for c in syllables if kosyl.FIRST <= ord(c) <= kosyl.LAST})
+    used = used_syllables(syllables)
     grids = render(ttf, used, size, top)
     slot = bytearray(SYLLABLES * 2)
     glyphs = bytearray(32)                     # 0번 슬롯 = 빈 글리프
@@ -77,16 +97,17 @@ def build_syllable_tables(ttf: str, syllables, size: int, top: int
     return bytes(slot), bytes(glyphs), len(used)
 
 
-def render(ttf: str, chars, size: int, top: int, left: int = 0):
-    """{문자: 16×16 격자}. 픽셀 폰트이므로 크기를 정확히 맞춰야 선명합니다."""
+def render(ttf: str, chars, size: int, top: int, left: int = 0,
+           cell: int = CELL_W):
+    """{문자: cell×cell 격자}. 픽셀 폰트이므로 크기를 정확히 맞춰야 선명합니다."""
     from PIL import Image, ImageDraw, ImageFont
     font = ImageFont.truetype(ttf, size)
     out = {}
     for ch in chars:
-        im = Image.new("1", (CELL_W, CELL_H), 0)
+        im = Image.new("1", (cell, cell), 0)
         ImageDraw.Draw(im).text((left, top), ch, font=font, fill=1)
-        out[ch] = [[1 if im.getpixel((x, y)) else 0 for x in range(CELL_W)]
-                   for y in range(CELL_H)]
+        out[ch] = [[1 if im.getpixel((x, y)) else 0 for x in range(cell)]
+                   for y in range(cell)]
     return out
 
 

@@ -7,8 +7,9 @@
 하는 일
   1. `script/ko/*.txt` 에서 채워진 항목을 모읍니다.
   2. 쓰인 음절의 16×16 글리프와 색인 테이블을 만듭니다.
-  3. 출력 훅(`tools/kohook.py`)을 자유 공간에 놓고, 렌더 루프 두 곳
-     (`0x0801C904`, `0x0801CBF0`)의 `bl` 대상 주소만 바꿉니다.
+  3. 출력 훅(`tools/kohook.py`)을 자유 공간에 놓고, 렌더러 세 곳
+     (`0x0801C904`, `0x0801CBF0`, `0x0801C5E8`)의 `bl` 대상만 바꿉니다.
+     메뉴 렌더러는 8행 칸이라 8×8 글리프를 따로 씁니다.
   4. 번역문을 인코딩해 빈 공간에 쓰고, 문자열 테이블의 상대 오프셋을
      다시 씁니다.
 
@@ -143,7 +144,9 @@ def syllable_codes(text: str) -> dict[str, tuple[int, int]]:
 
 
 def build_patch(rom: bytearray, ko_dir: str, tables: list[int],
-                ttf: str, size: int, top: int) -> tuple[bytearray, dict]:
+                ttf: str, size: int, top: int,
+                ttf8: str | None = None, size8: int = 8, top8: int = 0
+                ) -> tuple[bytearray, dict]:
     """번역문·글리프·훅을 넣은 ROM과 통계를 돌려줍니다."""
     translated = read_translations(ko_dir, tables)
     if not translated:
@@ -155,24 +158,32 @@ def build_patch(rom: bytearray, ko_dir: str, tables: list[int],
 
     slot, glyphs, count = kofont.build_syllable_tables(
         ttf, ko_map, size, top)
+    # 8행 렌더러(메뉴)용 8×8 글리프. 슬롯 번호는 큰 표와 같습니다.
+    glyphs8 = kofont.build_small_glyphs(ttf8 or ttf, ko_map, size8, top8)
 
     arena = Arena(rom, auto_regions(rom))
     # 훅은 호출 지점에서 bl 사거리 안에 있어야 합니다.
-    sites = [(kohook.CALL_SITE, kohook.GET_WIDE, 0, 6),
-             (kohook.CALL_SITE_HALF, kohook.GET_HALF, 8, 6),
-             (kohook.CALL_SITE_MENU, kohook.GET_HALF, 0, 8)]
-    hooks = [arena.alloc(256, align=2, near=site) for site, _, _, _ in sites]
+    sites = [(kohook.CALL_SITE, kohook.GET_WIDE, 0, 6, False),
+             (kohook.CALL_SITE_HALF, kohook.GET_HALF, 8, 6, False),
+             (kohook.CALL_SITE_MENU, kohook.GET_HALF, 0, 8, True)]
+    hooks = [arena.alloc(256, align=2, near=s[0]) for s in sites]
     slot_at = arena.alloc(len(slot))
     glyph_at = arena.alloc(len(glyphs))
-    slot_p, glyph_p = common.off_to_ptr(slot_at), common.off_to_ptr(glyph_at)
+    glyph8_at = arena.alloc(len(glyphs8))
+    slot_p = common.off_to_ptr(slot_at)
+    glyph_p = common.off_to_ptr(glyph_at)
+    glyph8_p = common.off_to_ptr(glyph8_at)
 
     rom[slot_at:slot_at + len(slot)] = slot
     rom[glyph_at:glyph_at + len(glyphs)] = glyphs
+    rom[glyph8_at:glyph8_at + len(glyphs8)] = glyphs8
 
     # 렌더러마다 원래 부르던 함수·dst 위치·스트림 레지스터가 다릅니다.
-    for at, (site, fb, back, sreg) in zip(hooks, sites):
-        code = kohook.build(common.off_to_ptr(at), slot_p, glyph_p,
-                            fallback=fb, dst_back=back, stream_reg=sreg)
+    for at, (site, fb, back, sreg, small) in zip(hooks, sites):
+        code = kohook.build(common.off_to_ptr(at), slot_p,
+                            glyph8_p if small else glyph_p,
+                            fallback=fb, dst_back=back, stream_reg=sreg,
+                            small=small)
         rom[at:at + len(code)] = code
         o = site - common.ROM_BASE
         rom[o:o + 4] = thumb.bl_bytes(site, common.off_to_ptr(at))
@@ -197,6 +208,7 @@ def build_patch(rom: bytearray, ko_dir: str, tables: list[int],
         "훅": [common.off_to_ptr(a) for a in hooks],
         "색인": common.off_to_ptr(slot_at),
         "글리프": common.off_to_ptr(glyph_at),
+        "글리프8": common.off_to_ptr(glyph8_at),
         "남은 자유 공간": arena.remaining,
     }
 
@@ -210,6 +222,10 @@ def main() -> int:
     ap.add_argument("--ttf", required=True, help="한글 비트맵 TTF")
     ap.add_argument("--size", type=int, default=14)
     ap.add_argument("--top", type=int, default=2, help="16행 중 글자 시작 행")
+    ap.add_argument("--ttf8", default="font/Galmuri7.ttf",
+                    help="8행 렌더러(메뉴)용 8×8 한글 TTF")
+    ap.add_argument("--size8", type=int, default=8)
+    ap.add_argument("--top8", type=int, default=0)
     args = ap.parse_args()
 
     rom = common.load(args.rom)
@@ -223,7 +239,9 @@ def main() -> int:
 
     try:
         rom, stats = build_patch(rom, args.ko, tables, args.ttf,
-                                 args.size, args.top)
+                                 args.size, args.top,
+                                 args.ttf8 if os.path.exists(args.ttf8) else None,
+                                 args.size8, args.top8)
     except InsertError as e:
         print(f"[!] {e}", file=sys.stderr)
         return 1
@@ -234,8 +252,10 @@ def main() -> int:
     print("  훅               " + " ".join(f"0x{h:08X}" for h in stats['훅']))
     print(f"  색인 테이블      0x{stats['색인']:08X} "
           f"({kofont.SYLLABLES * 2:,}바이트)")
-    print(f"  글리프           0x{stats['글리프']:08X} "
+    print(f"  글리프 16×16     0x{stats['글리프']:08X} "
           f"({(stats['음절'] + 1) * 32:,}바이트)")
+    print(f"  글리프 8×8       0x{stats['글리프8']:08X} "
+          f"({(stats['음절'] + 1) * 8:,}바이트)")
     print(f"  남은 자유 공간   {stats['남은 자유 공간']:,}바이트")
 
     common.save(args.out, bytes(rom))

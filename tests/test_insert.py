@@ -100,12 +100,14 @@ class RomPatchTest(unittest.TestCase):
 
     def test_훅과_테이블이_제자리에_놓인다(self):
         out, stats = self._build("한글")
-        for at, (fb, back, sreg) in zip(stats["훅"],
-                                        ((kohook.GET_WIDE, 0, 6),
-                                         (kohook.GET_HALF, 8, 6),
-                                         (kohook.GET_HALF, 0, 8))):
-            hook = kohook.build(at, stats["색인"], stats["글리프"],
-                                fallback=fb, dst_back=back, stream_reg=sreg)
+        for at, (fb, back, sreg, sm) in zip(stats["훅"],
+                                            ((kohook.GET_WIDE, 0, 6, False),
+                                             (kohook.GET_HALF, 8, 6, False),
+                                             (kohook.GET_HALF, 0, 8, True))):
+            hook = kohook.build(at, stats["색인"],
+                                stats["글리프8"] if sm else stats["글리프"],
+                                fallback=fb, dst_back=back, stream_reg=sreg,
+                                small=sm)
             o = at - common.ROM_BASE
             self.assertEqual(bytes(out[o:o + len(hook)]), hook, hex(at))
 
@@ -116,6 +118,15 @@ class RomPatchTest(unittest.TestCase):
             self.assertNotEqual(slot, 0, ch)
             g = stats["글리프"] - common.ROM_BASE + slot * 32
             self.assertTrue(any(out[g:g + 32]), ch)
+
+    def test_8행_렌더러용_8x8_글리프도_만든다(self):
+        out, stats = self._build("한글")
+        for ch in "한글":
+            i = ord(ch) - kosyl.FIRST
+            off = stats["색인"] - common.ROM_BASE + i * 2
+            slot = int.from_bytes(out[off:off + 2], "little")
+            g8 = stats["글리프8"] - common.ROM_BASE + slot * 8
+            self.assertTrue(any(out[g8:g8 + 8]), ch)
 
     def test_폰트는_옮기지_않는다(self):
         """훅이 한글을 가로채므로 원본 폰트를 건드릴 이유가 없습니다."""
