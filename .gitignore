@@ -7,6 +7,9 @@ rom/*
 *.srm
 *.ips
 *.bps
+*.zip
+*.7z
+*.rar
 
 # 외부 배포물(영문 패치 등)에 동봉된 파일
 ReadMe.txt

@@ -8,7 +8,7 @@
 set -u
 
 MAX_BYTES=${MAX_BYTES:-1048576}          # 1MB
-BLOCKED_EXT='gba|nds|sfc|smc|n64|z64|iso|bin|sav|srm|ips|bps|ups|xdelta'
+BLOCKED_EXT='gba|nds|sfc|smc|n64|z64|iso|bin|sav|srm|ips|bps|ups|xdelta|zip|7z|rar'
 
 fail=0
 red=''; yellow=''; reset=''
