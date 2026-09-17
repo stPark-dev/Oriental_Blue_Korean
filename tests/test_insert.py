@@ -11,9 +11,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                 "..", "tools"))
 import common  # noqa: E402
 import inserttext  # noqa: E402
-import kocode  # noqa: E402
 import kofont  # noqa: E402
+import kohook  # noqa: E402
+import kosyl  # noqa: E402
 import obtext  # noqa: E402
+import thumb  # noqa: E402
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 TTF = "/home/stpark/다운로드/hanguel2/galmuri/Galmuri14.ttf"
@@ -29,6 +31,21 @@ class ReverseTableTest(unittest.TestCase):
         self.assertEqual(rev["あ"], 0xAB)
 
 
+class SyllableCodeTest(unittest.TestCase):
+    def test_음절은_고정된_코드_쌍을_받는다(self):
+        m = inserttext.syllable_codes("한글")
+        self.assertEqual(set(m), {"한", "글"})
+        for ch, (lead, trail) in m.items():
+            l, t = kosyl.to_pair(ch)
+            self.assertEqual(lead, kohook.lead_code(l))
+            self.assertEqual(trail, kohook.trail_code(t))
+
+    def test_배정이_아니라_계산이라_한도가_없다(self):
+        m = inserttext.syllable_codes(
+            "".join(chr(c) for c in range(0xAC00, 0xD7A4)))
+        self.assertEqual(len(m), 11172)
+
+
 class RomPatchTest(unittest.TestCase):
     ROM = os.path.join(ROOT, "rom", "baserom.gba")
 
@@ -40,86 +57,72 @@ class RomPatchTest(unittest.TestCase):
             raise unittest.SkipTest("갈무리 폰트 없음")
         cls.rom = common.load(cls.ROM)
 
-    def _ko_dir(self, tmp: str, text: str) -> str:
-        ko = os.path.join(tmp, "ko")
-        os.makedirs(ko)
-        with open(os.path.join(ko, f"t{TABLE:06X}.txt"), "w",
-                  encoding="utf-8", newline="\n") as f:
-            f.write(f"# 테스트\n\n## {INDEX:04d} @0x000000\n{text}\n\n")
-        return ko
-
-    def test_번역문이_실제로_들어가고_원문이_그대로_읽힌다(self):
+    def _build(self, text):
         with tempfile.TemporaryDirectory() as tmp:
-            ko = self._ko_dir(tmp, "한글")
-            out, stats = inserttext.build_patch(
-                bytearray(self.rom), ko, [TABLE], TTF, 14, 2)
+            ko = os.path.join(tmp, "ko")
+            os.makedirs(ko)
+            with open(os.path.join(ko, f"t{TABLE:06X}.txt"), "w",
+                      encoding="utf-8", newline="\n") as f:
+                f.write(f"# 테스트\n\n## {INDEX:04d} @0x000000\n{text}\n\n")
+            return inserttext.build_patch(bytearray(self.rom), ko, [TABLE],
+                                          TTF, 14, 2)
 
-            self.assertEqual(stats["번역 항목"], 1)
-            self.assertEqual(stats["음절"], 2)
-            # 한도는 예약을 뺀 실제 가용 코드 수의 절반이어야 한다
-            self.assertLessEqual(stats["음절 한도"], kocode.capacity())
-            self.assertGreater(stats["음절 한도"], 0)
+    def test_번역문이_코드_쌍으로_들어간다(self):
+        out, stats = self._build("한글")
+        self.assertEqual(stats["번역 항목"], 1)
+        self.assertEqual(stats["음절"], 2)
+        data = obtext.expand(out, inserttext.entry_addr(out, TABLE, INDEX))
+        want = []
+        for ch in "한글":
+            lead, trail = kosyl.to_pair(ch)
+            want += [kohook.lead_code(lead), kohook.trail_code(trail)]
+        self.assertEqual(inserttext.decode_codes(data), want)
 
-            # 테이블 엔트리가 새 위치를 가리키고, 전개하면 코드 4개 + 종결자
-            data = obtext.expand(out, inserttext.entry_addr(out, TABLE, INDEX))
-            self.assertEqual(data[-1], 0x00)
-            self.assertEqual(inserttext.decode_codes(data),
-                             [c for ch in "한글" for c in stats["배정"][ch]])
+    def test_번역하지_않은_항목은_그대로다(self):
+        out, _ = self._build("한글")
+        for idx in (INDEX - 1, INDEX + 1):
+            before = obtext.expand(
+                self.rom, inserttext.entry_addr(self.rom, TABLE, idx))
+            after = obtext.expand(
+                out, inserttext.entry_addr(out, TABLE, idx))
+            self.assertEqual(before, after, f"#{idx}")
 
-            # 번역하지 않은 이웃 항목은 그대로여야 한다
-            for idx in (INDEX - 1, INDEX + 1):
-                before = obtext.expand(
-                    self.rom, inserttext.entry_addr(self.rom, TABLE, idx))
-                after = obtext.expand(
-                    out, inserttext.entry_addr(out, TABLE, idx))
-                self.assertEqual(before, after, f"#{idx}")
+    def test_호출_지점이_훅을_가리킨다(self):
+        out, stats = self._build("한글")
+        site = kohook.CALL_SITE - common.ROM_BASE
+        self.assertEqual(bytes(out[site:site + 4]),
+                         thumb.bl_bytes(kohook.CALL_SITE, stats["훅"]))
+        self.assertLess(abs(stats["훅"] - kohook.CALL_SITE), 1 << 22)
 
-    def test_폰트가_재배치되고_글리프가_들어간다(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            ko = self._ko_dir(tmp, "한글")
-            out, stats = inserttext.build_patch(
-                bytearray(self.rom), ko, [TABLE], TTF, 14, 2)
+    def test_훅과_테이블이_제자리에_놓인다(self):
+        out, stats = self._build("한글")
+        hook = kohook.build(stats["훅"], stats["색인"], stats["글리프"])
+        at = stats["훅"] - common.ROM_BASE
+        self.assertEqual(bytes(out[at:at + len(hook)]), hook)
 
-            base = kofont.entry_addr(out, kofont.LARGE_ENTRY)
-            self.assertNotEqual(base, kofont.entry_addr(self.rom,
-                                                        kofont.LARGE_ENTRY))
-            # 새 배열은 뱅크 5 까지 담을 크기여야 한다
-            size = common.u32(out, base - 4)
-            self.assertEqual(size, kofont.LARGE_CODES * 16)
+        for ch in "한글":
+            i = ord(ch) - kosyl.FIRST
+            off = stats["색인"] - common.ROM_BASE + i * 2
+            slot = int.from_bytes(out[off:off + 2], "little")
+            self.assertNotEqual(slot, 0, ch)
+            g = stats["글리프"] - common.ROM_BASE + slot * 32
+            self.assertTrue(any(out[g:g + 32]), ch)
 
-            # 배정된 코드 자리에 글리프가 실제로 있다
-            for c in [x for ch in "한글" for x in stats["배정"][ch]]:
-                off = base + c * 16
-                self.assertTrue(any(out[off:off + 16]), f"코드 0x{c:03X} 가 빔")
+    def test_폰트는_옮기지_않는다(self):
+        """훅이 한글을 가로채므로 원본 폰트를 건드릴 이유가 없습니다."""
+        out, _ = self._build("한글")
+        for entry in (kofont.LARGE_ENTRY, kofont.SMALL_ENTRY):
+            self.assertEqual(kofont.entry_addr(out, entry),
+                             kofont.entry_addr(self.rom, entry))
 
-            # 원문 글리프(あ = 0xAB)는 보존되어야 한다
-            orig = kofont.entry_addr(self.rom, kofont.LARGE_ENTRY)
-            self.assertEqual(out[base + 0xAB * 16:base + 0xAB * 16 + 16],
-                             self.rom[orig + 0xAB * 16:orig + 0xAB * 16 + 16])
-
-    def test_원문에_쓰이는_코드는_한글에_넘기지_않는다(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            ko = self._ko_dir(tmp, "한글")
-            out, stats = inserttext.build_patch(
-                bytearray(self.rom), ko, [TABLE], TTF, 14, 2)
-            codes = {x for ch in "한글" for x in stats["배정"][ch]}
-            self.assertTrue(codes.isdisjoint(stats["예약 코드"]))
-
-    def test_한글은_큰_폰트_코드만_받는다(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            ko = self._ko_dir(tmp, "한글")
-            _, stats = inserttext.build_patch(
-                bytearray(self.rom), ko, [TABLE], TTF, 14, 2)
-            for ch, pair in stats["배정"].items():
-                for c in pair:
-                    self.assertGreater(c, 0x7F, f"'{ch}' 코드 0x{c:03X}")
+    def test_음절_수에_한도가_없다(self):
+        many = "".join(chr(c) for c in range(0xAC00, 0xAC00 + 2000))
+        _, stats = self._build(many)
+        self.assertEqual(stats["음절"], 2000)
 
     def test_대응되지_않는_문자는_중단시킨다(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            ko = self._ko_dir(tmp, "☃")
-            with self.assertRaises(inserttext.InsertError):
-                inserttext.build_patch(bytearray(self.rom), ko, [TABLE],
-                                       TTF, 14, 2)
+        with self.assertRaises(inserttext.InsertError):
+            self._build("☃")
 
 
 if __name__ == "__main__":

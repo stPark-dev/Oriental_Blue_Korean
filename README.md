@@ -51,7 +51,7 @@
 | ROM 식별 | ✅ 완료 | `ORIENTALBLUE` / `AORJ` / 128 Mbit |
 | 구조 분석 | ✅ 완료 | 스크립트·인코딩·폰트 전부 확정 |
 | 텍스트 덤프 | ✅ 완료 | 텍스트 테이블 117개 / 번역 대상 16,674개 |
-| 폰트 / 출력 루틴 | ✅ 완료 | 한글 폰트 생성·삽입 자동화, 최대 699음절 |
+| 폰트 / 출력 루틴 | ✅ 완료 | 출력 훅 + 음절 색인, 음절 수 제한 없음 |
 | 메인 시나리오 | ⏳ 대기 | 번역 대상 16,674항목 |
 | 서브 이벤트 | ⏳ 대기 | |
 | 시스템 텍스트 | ✅ 완료 | UI·메뉴 474항목 |
@@ -95,9 +95,12 @@ make                                        # 사용 가능한 타깃 목록
 | `tools/patch.py` | IPS / BPS 패치 생성 · 적용 |
 | `tools/obtext.py` | 게임 고유 압축 해제 · 문자열 테이블 탐색 |
 | `tools/obfont.py` | 원본 폰트 검증 · 글리프 추출 |
-| `tools/kocode.py` | 한글 코드 공간 모델 · 음절 배정 |
+| `tools/kocode.py` | 문자 코드 공간 모델 |
+| `tools/kosyl.py` | 음절 분해 · 코드 쌍 인코딩 |
+| `tools/thumb.py` | 최소 THUMB 어셈블러 |
+| `tools/kohook.py` | 한글 출력 훅 (THUMB 132바이트) |
 | `tools/koenc.py` | 번역문 → 게임 바이트열 인코딩 |
-| `tools/kofont.py` | 한글 글리프 생성 · 폰트 재배치 |
+| `tools/kofont.py` | 음절 글리프 · 색인 테이블 생성 |
 | `tests/` | `make test` — 단위 + ROM 회귀 테스트 24개 |
 | `tools/dumpscript.py` | 스크립트 전체 덤프 (`make script`) |
 

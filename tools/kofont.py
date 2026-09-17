@@ -12,8 +12,8 @@
 1 이 큰 폰트입니다. **오프셋 워드 하나만 바꾸면 폰트를 어디로든 옮길 수
 있습니다.** 코드 패치가 필요 없습니다.
 
-원본 큰 폰트는 크기 접두가 `0x4000` = 코드 `0x000`–`0x3FF`(뱅크 0–3)입니다.
-뱅크 4·5 까지 쓰려면 `0x6000` 으로 늘려 재배치해야 합니다.
+한글은 출력 훅(`tools/kohook.py`)이 가로채므로 **원본 폰트는 건드리지
+않습니다.** 이 파일의 `entry_addr` 는 폰트 위치 확인용으로 남겨 둡니다.
 
     python3 tools/kofont.py rom/baserom.gba --preview build/kofont.png
 """
@@ -26,11 +26,11 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common  # noqa: E402
 import kocode  # noqa: E402
+import kosyl  # noqa: E402
 import obfont  # noqa: E402
 
 FONT_ARCHIVE = 0x0D7DE5C
 SMALL_ENTRY, LARGE_ENTRY = 0, 1
-LARGE_CODES = kocode.MAX_CODE          # 0x600 — 뱅크 5 까지
 CELL_W, CELL_H = 16, 16                # 음절 한 개가 차지하는 픽셀
 
 
@@ -44,35 +44,37 @@ def entry_addr(rom: bytes, index: int, archive: int = FONT_ARCHIVE) -> int:
     return ((archive + off) & 0xFFFFFFFF) + 4
 
 
-def install(rom: bytearray, blob: bytes, at: int, index: int,
-            archive: int = FONT_ARCHIVE) -> None:
-    """`at` 에 `[u32 크기][blob]` 을 쓰고 아카이브가 그것을 가리키게 합니다."""
-    rom[at:at + 4] = len(blob).to_bytes(4, "little")
-    rom[at + 4:at + 4 + len(blob)] = blob
-    common.w32(rom, archive + 4 + index * 4, at - archive)
+SYLLABLES = 0xD7A4 - 0xAC00        # 11,172
 
 
-def halves(grid: list[list[int]]) -> tuple[bytes, bytes]:
-    """16×16 픽셀 격자를 8×16 두 장(왼쪽, 오른쪽)의 1bpp 바이트열로."""
-    left = bytes(sum(row[x] << (7 - x) for x in range(8)) for row in grid)
-    right = bytes(sum(row[8 + x] << (7 - x) for x in range(8)) for row in grid)
-    return left, right
+def pack_glyph(grid: list[list[int]]) -> bytes:
+    """16×16 격자를 32바이트로. 행마다 (왼쪽 8픽셀, 오른쪽 8픽셀) 입니다.
 
-
-def build_large(rom: bytes, glyphs: dict[int, bytes]) -> bytes:
-    """원본 큰 폰트를 바탕에 깔고 `glyphs` 를 덮어쓴 새 배열."""
-    out = bytearray(LARGE_CODES * obfont.LARGE.stride)
-    orig = rom[obfont.LARGE.base:
-               obfont.LARGE.base + 0x400 * obfont.LARGE.stride]
-    out[:len(orig)] = orig
-    for code, data in glyphs.items():
-        if not (0 <= code < LARGE_CODES):
-            raise ValueError(f"코드 범위 밖: 0x{code:X}")
-        if len(data) != obfont.LARGE.stride:
-            raise ValueError(f"글리프 크기가 {obfont.LARGE.stride}바이트가 아닙니다")
-        o = code * obfont.LARGE.stride
-        out[o:o + obfont.LARGE.stride] = data
+    훅이 `half` 부터 두 바이트 간격으로 16번 읽으므로 이 순서여야 합니다.
+    """
+    out = bytearray()
+    for row in grid:
+        out.append(sum(row[x] << (7 - x) for x in range(8)))
+        out.append(sum(row[8 + x] << (7 - x) for x in range(8)))
     return bytes(out)
+
+
+def build_syllable_tables(ttf: str, syllables, size: int, top: int
+                          ) -> tuple[bytes, bytes, int]:
+    """쓰는 음절만 글리프로 만들고 색인 테이블과 함께 돌려줍니다.
+
+    (색인 테이블, 글리프, 음절 수). 색인은 음절 번호 -> 슬롯(u16) 이고
+    슬롯 0 은 "쓰지 않음" 입니다. 글리프 0번 자리는 비워 둡니다.
+    """
+    used = sorted({c for c in syllables if kosyl.FIRST <= ord(c) <= kosyl.LAST})
+    grids = render(ttf, used, size, top)
+    slot = bytearray(SYLLABLES * 2)
+    glyphs = bytearray(32)                     # 0번 슬롯 = 빈 글리프
+    for n, ch in enumerate(used, start=1):
+        i = ord(ch) - kosyl.FIRST
+        slot[i * 2:i * 2 + 2] = n.to_bytes(2, "little")
+        glyphs += pack_glyph(grids[ch])
+    return bytes(slot), bytes(glyphs), len(used)
 
 
 def render(ttf: str, chars, size: int, top: int, left: int = 0):
@@ -85,16 +87,6 @@ def render(ttf: str, chars, size: int, top: int, left: int = 0):
         ImageDraw.Draw(im).text((left, top), ch, font=font, fill=1)
         out[ch] = [[1 if im.getpixel((x, y)) else 0 for x in range(CELL_W)]
                    for y in range(CELL_H)]
-    return out
-
-
-def glyphs_for(mapping: dict[str, tuple[int, int]], grids) -> dict[int, bytes]:
-    """{음절: (좌코드, 우코드)} + {음절: 격자} -> {코드: 16바이트}."""
-    out = {}
-    for ch, (lc, rc) in mapping.items():
-        left, right = halves(grids[ch])
-        out[lc] = left
-        out[rc] = right
     return out
 
 

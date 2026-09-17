@@ -6,15 +6,15 @@
 
 하는 일
   1. `script/ko/*.txt` 에서 채워진 항목을 모읍니다.
-  2. 번역하지 않은 항목이 쓰는 원문 코드를 **예약**합니다 (글리프 보존).
-  3. 남은 코드 공간에 한글 음절을 배정합니다 (음절당 두 칸).
-  4. TTF 를 16×16 으로 렌더해 왼쪽/오른쪽 8×16 글리프를 만듭니다.
-  5. 큰 폰트 배열을 `0x600` 엔트리로 늘려 빈 공간에 놓고, 아카이브 오프셋
-     워드 하나만 바꿔 가리키게 합니다 (**코드 패치 없음**).
-  6. 번역문을 인코딩해 빈 공간에 쓰고, 문자열 테이블의 상대 오프셋을
+  2. 쓰인 음절의 16×16 글리프와 색인 테이블을 만듭니다.
+  3. 출력 훅(`tools/kohook.py`)을 자유 공간에 놓고, `0x0801C904` 의
+     `bl` 대상 주소만 바꿔 훅을 부르게 합니다.
+  4. 번역문을 인코딩해 빈 공간에 쓰고, 문자열 테이블의 상대 오프셋을
      다시 씁니다.
 
-원본 문자열 자리는 건드리지 않으므로 부분 번역 상태로도 빌드됩니다.
+음절은 **코드 두 개**로 나가고 훅이 글리프를 찾아 두 칸에 나눠 씁니다.
+코드가 고정이라 **음절 수에 한도가 없습니다**. 원본 폰트도 문자열 자리도
+건드리지 않으므로 부분 번역 상태로도 빌드됩니다.
 """
 from __future__ import annotations
 
@@ -24,11 +24,13 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common  # noqa: E402
-import kocode  # noqa: E402
 import koenc  # noqa: E402
 import kofont  # noqa: E402
+import kohook  # noqa: E402
+import kosyl  # noqa: E402
 import mktbl  # noqa: E402
 import obtext  # noqa: E402
+import thumb  # noqa: E402
 from script_io import ScriptFile  # noqa: E402
 
 
@@ -46,14 +48,22 @@ class Arena:
         self.regions = [list(r) for r in sorted(regions, reverse=True)]
         self.used = 0
 
-    def alloc(self, size: int, align: int = 4) -> int:
+    def alloc(self, size: int, align: int = 4, near: int | None = None,
+              reach: int = 1 << 21) -> int:
+        """`near` 를 주면 그 주소에서 `reach` 안쪽에만 잡습니다 (bl 사거리)."""
         for reg in self.regions:
             start = reg[0] + ((-reg[0]) % align)
-            if start + size <= reg[1]:
-                reg[0] = start + size
-                self.used += size
-                return start
-        raise InsertError(f"자유 공간 부족: {size:,}바이트를 넣을 곳이 없습니다")
+            if start + size > reg[1]:
+                continue
+            if near is not None and abs(
+                    common.off_to_ptr(start) - near) > reach:
+                continue
+            reg[0] = start + size
+            self.used += size
+            return start
+        raise InsertError(f"자유 공간 부족: {size:,}바이트를 넣을 곳이 없습니다"
+                          + (f" (0x{near:08X} 에서 bl 사거리 안)"
+                             if near is not None else ""))
 
     @property
     def remaining(self) -> int:
@@ -121,57 +131,47 @@ def read_translations(ko_dir: str, tables: list[int]) -> dict[int, dict[int, str
     return out
 
 
-def reserved_codes(rom: bytes, tables: list[int],
-                   translated: dict[int, dict[int, str]]) -> set[int]:
-    """번역하지 않은 항목이 쓰는 문자 코드 — 글리프를 지우면 안 됩니다."""
-    used: set[int] = set()
-    for base in tables:
-        done = translated.get(base, {})
-        count = common.u32(rom, base)
-        for idx in range(1, count):
-            if idx in done:
-                continue
-            try:
-                data = obtext.expand(rom, base + common.u32(rom, base + idx * 4))
-            except Exception:
-                continue
-            i = 0
-            while i < len(data):
-                b = data[i]
-                if b in (1, 2, 3, 4, 5) and i + 1 < len(data):
-                    used.add((b << 8) | data[i + 1])
-                    i += 2
-                else:
-                    used.add(b)
-                    i += 1
-    return used
+def syllable_codes(text: str) -> dict[str, tuple[int, int]]:
+    """쓰인 음절 -> (앞 코드, 뒤 코드). 배정이 아니라 계산이라 한도가 없습니다."""
+    out = {}
+    for ch in text:
+        if ch in out or not (kosyl.FIRST <= ord(ch) <= kosyl.LAST):
+            continue
+        lead, trail = kosyl.to_pair(ch)
+        out[ch] = (kohook.lead_code(lead), kohook.trail_code(trail))
+    return out
 
 
 def build_patch(rom: bytearray, ko_dir: str, tables: list[int],
                 ttf: str, size: int, top: int) -> tuple[bytearray, dict]:
-    """번역문과 한글 폰트를 넣은 ROM과 통계를 돌려줍니다."""
+    """번역문·글리프·훅을 넣은 ROM과 통계를 돌려줍니다."""
     translated = read_translations(ko_dir, tables)
     if not translated:
         raise InsertError(f"{ko_dir} 에 채워진 항목이 없습니다")
 
     ja_rev = reverse_table(mktbl.build(rom))
-    reserved = reserved_codes(rom, tables, translated)
-
     text_all = "".join(t for rows in translated.values() for t in rows.values())
-    syllables = [c for c in dict.fromkeys(text_all) if kocode.is_syllable(c)]
-    pool = kocode.usable_codes()
-    free = [c for c in pool if c not in reserved]
-    try:
-        ko_map = kocode.allocate("".join(syllables), pool, reserved)
-    except kocode.OutOfCodes as e:
-        raise InsertError(str(e)) from e
+    ko_map = syllable_codes(text_all)
 
-    grids = kofont.render(ttf, ko_map, size, top)
-    blob = kofont.build_large(rom, kofont.glyphs_for(ko_map, grids))
+    slot, glyphs, count = kofont.build_syllable_tables(
+        ttf, ko_map, size, top)
 
     arena = Arena(rom, auto_regions(rom))
-    at = arena.alloc(len(blob) + 4, align=4)
-    kofont.install(rom, blob, at, kofont.LARGE_ENTRY)
+    # 훅은 호출 지점에서 bl 사거리 안에 있어야 합니다.
+    hook_at = arena.alloc(256, align=2, near=kohook.CALL_SITE)
+    slot_at = arena.alloc(len(slot))
+    glyph_at = arena.alloc(len(glyphs))
+
+    hook = kohook.build(common.off_to_ptr(hook_at),
+                        common.off_to_ptr(slot_at),
+                        common.off_to_ptr(glyph_at))
+    rom[hook_at:hook_at + len(hook)] = hook
+    rom[slot_at:slot_at + len(slot)] = slot
+    rom[glyph_at:glyph_at + len(glyphs)] = glyphs
+
+    site = kohook.CALL_SITE - common.ROM_BASE
+    rom[site:site + 4] = thumb.bl_bytes(kohook.CALL_SITE,
+                                        common.off_to_ptr(hook_at))
 
     written = entries = 0
     for base, rows in translated.items():
@@ -188,12 +188,11 @@ def build_patch(rom: bytearray, ko_dir: str, tables: list[int],
 
     return rom, {
         "번역 항목": entries,
-        "음절": len(ko_map),
-        "배정": ko_map,
-        "음절 한도": len(free) // 2,
-        "예약 코드": reserved,
+        "음절": count,
         "문자열 바이트": written,
-        "폰트 위치": at + 4,
+        "훅": common.off_to_ptr(hook_at),
+        "색인": common.off_to_ptr(slot_at),
+        "글리프": common.off_to_ptr(glyph_at),
         "남은 자유 공간": arena.remaining,
     }
 
@@ -226,13 +225,13 @@ def main() -> int:
         return 1
 
     print(f"  번역 항목        {stats['번역 항목']:,}개")
-    limit = stats["음절 한도"]
-    print(f"  한글 음절        {stats['음절']:,}자 / 한도 {limit:,}자 "
-          f"({stats['음절'] / limit:.0%})")
-    print(f"  예약 코드        {len(stats['예약 코드']):,}개 (원문 글리프 보존)")
+    print(f"  한글 음절        {stats['음절']:,}자 (한도 없음)")
     print(f"  문자열           {stats['문자열 바이트']:,}바이트")
-    print(f"  폰트             0x{stats['폰트 위치']:07X} "
-          f"({kofont.LARGE_CODES * 16:,}바이트)")
+    print(f"  훅               0x{stats['훅']:08X}")
+    print(f"  색인 테이블      0x{stats['색인']:08X} "
+          f"({kofont.SYLLABLES * 2:,}바이트)")
+    print(f"  글리프           0x{stats['글리프']:08X} "
+          f"({(stats['음절'] + 1) * 32:,}바이트)")
     print(f"  남은 자유 공간   {stats['남은 자유 공간']:,}바이트")
 
     common.save(args.out, bytes(rom))
