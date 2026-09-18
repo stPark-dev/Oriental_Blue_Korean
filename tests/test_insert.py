@@ -46,6 +46,72 @@ class SyllableCodeTest(unittest.TestCase):
         self.assertEqual(len(m), 11172)
 
 
+class ReadSetTest(unittest.TestCase):
+    """전개하며 실제로 읽은 바이트를 모읍니다 (역참조 포함)."""
+
+    def test_압축되지_않은_문자열은_자기_바이트만_읽는다(self):
+        rom = bytes([0x41, 0x42, 0x00])
+        self.assertEqual(inserttext.read_set(rom, 0), {0, 1, 2})
+
+    def test_뒤로_참조하면_앞쪽_바이트도_읽는다(self):
+        # 0x41 0x42 0x43 0x44 뒤에 (길이 4, 거리 7) 이스케이프
+        rom = bytes([0x41, 0x42, 0x43, 0x44, 0x08, 0x00, 0x07, 0x00])
+        got = inserttext.read_set(rom, 0)
+        self.assertEqual(got, {0, 1, 2, 3, 4, 5, 6, 7})
+
+    def test_종결자에서_멈춘다(self):
+        rom = bytes([0x41, 0x00, 0x42, 0x43])
+        self.assertEqual(inserttext.read_set(rom, 0), {0, 1})
+
+
+class SpansTest(unittest.TestCase):
+    def test_이어진_주소는_한_구간으로_묶는다(self):
+        self.assertEqual(inserttext.spans([1, 2, 3, 7, 8], 1),
+                         [(1, 4), (7, 9)])
+
+    def test_짧은_구간은_버린다(self):
+        self.assertEqual(inserttext.spans([1, 2, 3, 7, 8], 3), [(1, 4)])
+
+    def test_빈_입력(self):
+        self.assertEqual(inserttext.spans([], 1), [])
+
+
+class DeadRegionTest(unittest.TestCase):
+    """번역한 항목의 원문 자리는 비우고, 남은 항목이 읽는 곳은 지킵니다."""
+
+    ROM = os.path.join(ROOT, "rom", "baserom.gba")
+
+    @classmethod
+    def setUpClass(cls):
+        if not os.path.exists(cls.ROM):
+            raise unittest.SkipTest("rom/baserom.gba 없음")
+        cls.rom = common.load(cls.ROM)
+
+    def test_번역하지_않은_항목이_읽는_바이트는_비우지_않는다(self):
+        base = TABLE
+        count, entries = obtext.read_table(self.rom, base)
+        rows = {1: "가"}                     # 1번만 번역했다고 치고
+        dead = inserttext.dead_regions(self.rom, {base: rows})
+        live = set()
+        for i, addr in enumerate(entries, 1):
+            if i in rows:
+                continue
+            try:
+                live |= inserttext.read_set(self.rom, addr)
+            except obtext.ExpandError:
+                pass
+        for a, b in dead:
+            self.assertFalse(live & set(range(a, b)),
+                             f"0x{a:X}-0x{b:X} 는 남은 항목이 읽는 자리")
+
+    def test_번역한_항목의_자리가_비워진다(self):
+        base = TABLE
+        _, entries = obtext.read_table(self.rom, base)
+        rows = {i: "가" for i in range(1, len(entries) + 1)}
+        dead = inserttext.dead_regions(self.rom, {base: rows})
+        self.assertTrue(sum(b - a for a, b in dead) > 1000)
+
+
 class RomPatchTest(unittest.TestCase):
     ROM = os.path.join(ROOT, "rom", "baserom.gba")
 

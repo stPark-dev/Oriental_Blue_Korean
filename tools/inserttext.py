@@ -87,6 +87,77 @@ def auto_regions(rom: bytes, fill: int = 0xFF,
     return out
 
 
+def read_set(rom: bytes, src: int, budget: int = obtext.OUT_LIMIT) -> set[int]:
+    """전개하면서 **읽은** 바이트 주소. 되참조한 앞쪽 바이트도 들어갑니다."""
+    seen: set[int] = set()
+
+    def run(p: int, remaining: int, depth: int) -> bool:
+        if depth > obtext.MAX_DEPTH:
+            raise obtext.ExpandError("재귀 한계 초과")
+        while remaining > 0:
+            if not (0 <= p < len(rom)):
+                raise obtext.ExpandError(f"범위 밖 소스 0x{p:X}")
+            seen.add(p)
+            b = rom[p]
+            p += 1
+            if b == obtext.ESCAPE:
+                if p + 1 >= len(rom):
+                    raise obtext.ExpandError("이스케이프 뒤 데이터 부족")
+                seen.add(p)
+                seen.add(p + 1)
+                b1, b2 = rom[p], rom[p + 1]
+                p += 2
+                length = min((b1 >> 4) + 4, remaining)
+                dist = ((b1 & 0x0F) << 8) | b2
+                if run(p - dist, length, depth + 1):
+                    return True
+                remaining -= length
+            else:
+                if b == obtext.TERMINATOR:
+                    return True
+                remaining -= 1
+        return False
+
+    run(src, budget, 0)
+    return seen
+
+
+def spans(addrs, min_size: int = 16) -> list[tuple[int, int]]:
+    """정렬된 주소들을 이어붙여 `min_size` 이상인 (시작, 끝) 목록으로."""
+    out: list[tuple[int, int]] = []
+    start = prev = None
+    for a in addrs:
+        if prev is not None and a == prev + 1:
+            prev = a
+            continue
+        if start is not None and prev + 1 - start >= min_size:
+            out.append((start, prev + 1))
+        start = prev = a
+    if start is not None and prev + 1 - start >= min_size:
+        out.append((start, prev + 1))
+    return out
+
+
+def dead_regions(rom: bytes, translated: dict[int, dict[int, str]],
+                 min_size: int = 16) -> list[tuple[int, int]]:
+    """번역으로 버려지는 원문 문자열 자리.
+
+    이 형식의 LZ 는 **앞서 나온 바이트를 되참조**하므로, 번역하지 않은
+    항목이 전개 중에 읽는 바이트는 빼고 돌려줍니다.
+    """
+    dead: set[int] = set()
+    live: set[int] = set()
+    for base, rows in translated.items():
+        _, entries = obtext.read_table(rom, base)
+        for idx, addr in enumerate(entries, 1):
+            try:
+                got = read_set(rom, addr)
+            except obtext.ExpandError:
+                continue
+            (dead if idx in rows else live).update(got)
+    return spans(sorted(dead - live), min_size)
+
+
 def entry_addr(rom: bytes, table: int, index: int) -> int:
     """문자열 테이블 엔트리의 절대 ROM 오프셋.
 
@@ -161,7 +232,9 @@ def build_patch(rom: bytearray, ko_dir: str, tables: list[int],
     # 8행 렌더러(메뉴)용 8×8 글리프. 슬롯 번호는 큰 표와 같습니다.
     glyphs8 = kofont.build_small_glyphs(ttf8 or ttf, ko_map, size8, top8)
 
-    arena = Arena(rom, auto_regions(rom))
+    # 번역으로 쓸모없어진 원문 문자열 자리도 자유 공간에 더합니다.
+    arena = Arena(rom, auto_regions(rom)
+                  + dead_regions(rom, translated))
     # 훅은 호출 지점에서 bl 사거리 안에 있어야 합니다.
     sites = [(kohook.CALL_SITE, kohook.GET_WIDE, 0, 6, False),
              (kohook.CALL_SITE_HALF, kohook.GET_HALF, 8, 6, False),
