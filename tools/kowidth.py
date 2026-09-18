@@ -28,6 +28,8 @@ from script_io import ScriptFile  # noqa: E402
 TAG_RE = re.compile(r"<\$([0-9A-Fa-f]{2,3})>")
 # <$1F> 뒤에 붙는 printf 서식: -, 0, 자리수, 변환문자
 FMT_RE = re.compile(r"-?0?(\d*)([a-zA-Z])")
+# 고대 문자 (build/ja.tbl 0x180~0x1AA): `\A` 두 글자가 한 칸짜리 글리프 하나
+ANCIENT_RE = re.compile(r"\\[0-9A-Z]")
 
 
 def cells(text: str) -> int:
@@ -45,6 +47,10 @@ def cells(text: str) -> int:
                 total += int(f.group(1)) if f.group(1) else (
                     0 if f.group(2) in "sc" else 1)
                 i = f.end()
+            continue
+        if ANCIENT_RE.match(text, i):
+            total += 1
+            i += 2
             continue
         total += 2 if kocode.is_syllable(text[i]) else 1
         i += 1

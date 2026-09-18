@@ -75,7 +75,7 @@ class HardLimitTest(unittest.TestCase):
     """원문 그대로 둔 줄은 이미 게임이 그리고 있으므로 한계 검사에서 뺍니다."""
 
     def test_고치지_않은_줄은_넘겨도_통과(self):
-        line = "\\A" * 20          # 고대문자 이스케이프, 원문과 같은 줄
+        line = "\\A" * 30          # 고대문자 이스케이프, 원문과 같은 줄
         self.assertGreater(kowidth.cells(line), 26)
         self.assertEqual(kowidth.too_wide(line, line, 26), [])
 
