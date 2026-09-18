@@ -71,5 +71,26 @@ class CheckTest(unittest.TestCase):
         self.assertEqual([o[0] for o in over], [1])
 
 
+class HardLimitTest(unittest.TestCase):
+    """원문 그대로 둔 줄은 이미 게임이 그리고 있으므로 한계 검사에서 뺍니다."""
+
+    def test_고치지_않은_줄은_넘겨도_통과(self):
+        line = "\\A" * 20          # 고대문자 이스케이프, 원문과 같은 줄
+        self.assertGreater(kowidth.cells(line), 26)
+        self.assertEqual(kowidth.too_wide(line, line, 26), [])
+
+    def test_번역한_줄은_한계를_지킨다(self):
+        long = "가" * 14            # 28칸
+        self.assertEqual(kowidth.too_wide("ああ", long, 26), [(0, 28)])
+
+    def test_줄마다_따로_본다(self):
+        ja = "ああ\nいい"
+        ko = "ああ\n" + "가" * 14   # 첫 줄은 그대로, 둘째 줄만 번역
+        self.assertEqual(kowidth.too_wide(ja, ko, 26), [(1, 28)])
+
+    def test_원문이_짧아도_남는_줄은_검사한다(self):
+        self.assertEqual(kowidth.too_wide("あ", "가" * 14, 26), [(0, 28)])
+
+
 if __name__ == "__main__":
     unittest.main()

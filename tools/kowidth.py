@@ -60,6 +60,24 @@ def is_index_data(text: str) -> bool:
     return "／" in text
 
 
+def too_wide(ja: str, ko: str, limit: int) -> list[tuple[int, int]]:
+    """`limit` 칸을 넘는 **번역한** 줄을 (줄번호, 칸) 으로 돌려줍니다.
+
+    원문과 똑같은 줄은 뺍니다 — 손대지 않았으니 게임이 이미 그리고 있고,
+    고대문자 이스케이프(`\\A`) 처럼 한 글자가 두 코드인 표기도 있어서
+    칸 수 계산이 실제 폭과 어긋납니다.
+    """
+    src = ja.split("\n")
+    out = []
+    for i, line in enumerate(ko.split("\n")):
+        if i < len(src) and line == src[i]:
+            continue
+        w = cells(line)
+        if w > limit:
+            out.append((i, w))
+    return out
+
+
 def check(ja: str, ko: str) -> list[tuple[int, int, int]]:
     """원문보다 넓은 줄을 (줄번호, 번역 칸, 원문 칸) 으로 돌려줍니다."""
     a, b = line_cells(ja), line_cells(ko)
@@ -94,9 +112,10 @@ def main() -> int:
                 continue
             total += 1
             if not is_index_data(e.text):
-                for w, line in zip(line_cells(e.text), e.text.split("\n")):
-                    if w > args.max_cells:
-                        hard.append((name, e.index, w, line))
+                lines = e.text.split("\n")
+                for ln, w in too_wide(ja.get(e.index, ""), e.text,
+                                      args.max_cells):
+                    hard.append((name, e.index, w, lines[ln]))
             bad = check(ja.get(e.index, ""), e.text)
             if not bad:
                 continue
