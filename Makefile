@@ -87,9 +87,13 @@ insert: strings ## 번역문 + 한글 폰트 + 타이틀 삽입 -> build/patched
 	else \
 		echo "  타이틀         건너뜀 ($(LOGO) 또는 $(FONT8) 없음)"; \
 	fi
+	@$(PYTHON) tools/konarr.py $(PATCHED) --font $(FONT)
 
 title: ## 타이틀 로고만 다시 만들기 (build/patched.gba 필요)
 	@$(PYTHON) tools/kotitle.py $(PATCHED) --logo $(LOGO) --font $(FONT8)
+
+narr: ## 오프닝 나레이션만 다시 만들기 (build/patched.gba 필요)
+	@$(PYTHON) tools/konarr.py $(PATCHED) --font $(FONT)
 
 patch: insert ## 배포용 BPS 패치 생성
 	@$(PYTHON) tools/patch.py make $(ROM) $(PATCHED) $(PATCH)
@@ -107,4 +111,4 @@ clean: ## 빌드 산출물 삭제
 	@rm -rf $(BUILD)/*.gba $(BUILD)/*.tsv $(BUILD)/*.png $(BUILD)/*.log
 	@echo "정리 완료"
 
-.PHONY: help hooks test check width scan-ptr scan-text scan-lz tbl tbl-check strings vm grid grid-find script dump font-orig font insert title patch build verify run clean
+.PHONY: help hooks test check width scan-ptr scan-text scan-lz tbl tbl-check strings vm grid grid-find script dump font-orig font insert title narr patch build verify run clean

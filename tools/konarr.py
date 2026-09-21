@@ -5,51 +5,81 @@
 805개를 다 펴 봐도 없고, 대응표로 인코딩한 바이트열도 평문에 없습니다.
 정체는 **16×16 스프라이트**입니다.
 
-    글리프 그림   ROM 0x8E3F08 + 타일번호*32   (한 글자 = 타일 4장, 1차원 배치)
+    글리프 그림   ROM 0x8E4508 + attr2*32   (한 글자 = 타일 4장, 1차원 배치)
     스프라이트표  ROM 0x8E6718 부터 8바이트 × 96
+    같은 표 사본  ROM 0x8E4208 (x 만 다름 — 미끄러져 들어오는 애니메이션)
 
-스프라이트 한 칸은 OAM 과 같은 모양입니다 — `attr0`(y·크기) `attr1`(x·반전·크기)
-`attr2`(타일·팔레트), 뒤에 2바이트 여백. 게임은 이 표를 그대로 OAM 에 올리고
-줄마다 y 를 더해 움직입니다. 그래서 **y 값이 곧 줄 구분**입니다.
+한 칸은 OAM 과 같은 모양입니다 — `attr0`(y·크기) `attr1`(x·반전·크기)
+`attr2`(글리프), 뒤에 2바이트 여백.
+
+구조를 푸는 데 쓴 방법:
+
+1. `--probe` 로 글리프 칸마다 번호를 새긴 롬을 만들어 실기에서 찍었습니다.
+   화면에 뜬 숫자가 곧 그 자리의 글리프 번호입니다.
+2. 거기서 얻은 글리프↔글자 대응으로 표 전체를 해독했습니다.
+
+결론은 이렇습니다.
+
+    한 줄     = 레코드 묶음 (`LINES`)
+    글자 순서 = **x 내림차순** (표에는 오른쪽 글자가 먼저 들어 있습니다)
+    글리프    = `attr2` (VRAM 에 올릴 때 타일 0x30 이 더해집니다)
+
+그래서 한글화는 **`attr2` 만 바꾸면 됩니다.** 원문보다 짧은 줄은 남는 칸에
+빈 글리프를 넣습니다.
+
+x 는 **건드리지 않습니다.** 두 표는 같은 글을 서로 반대 방향으로 담고 있어서
+(한쪽은 x 내림차순, 다른 쪽은 오름차순) 한쪽 기준으로 다시 배치하면 다른
+쪽이 뒤집힙니다. 원문이 가나 폭에 맞춘 가변 간격이라 한글 간격이 조금
+들쭉날쭉하지만, 자리와 애니메이션은 원본 그대로입니다.
 
 글자는 세 가지 색으로 그립니다 (팔레트는 페이드 애니메이션이 돌립니다).
 
-    3 = 획      1 = 획 둘레 1픽셀      2 = 그 바깥 1픽셀
-
-`--probe N` 은 레코드 번호를 두 자리로 새긴 시험용 롬을 만듭니다. 실기에서
-찍으면 **화면의 어느 자리가 몇 번 레코드인지** 그대로 읽힙니다. 이걸로 첫
-화면의 세 줄을 확정했습니다.
-
-    1줄 どこまでもつづく　青い空と        20 08 19 18 17 09 16 15 | 00 14 22 21
-    2줄 どこまでもつづく　青い海をうつし  20 08 19 18 17 09 16 15 | 00 14 13 12 11 09 10
-    3줄 ここに　青の大地がある            08 08 07 | 00 06 05 04 03 02 01
-
-**아직 못 푼 것**: 한 레코드가 두 줄에 함께 나옵니다(1·2줄의 앞부분이 같은
-번호). 그러니 줄을 이루는 레코드 목록은 이 표가 아니라 **다른 곳**에 있고,
-x 도 게임이 따로 계산합니다. 그 목록을 찾아야 번역문을 넣을 수 있습니다.
-`layout()` 은 그 목록을 찾은 뒤에 쓸 자리만 잡아 둔 것입니다.
+    3 = 획      1 = 획 둘레 1픽셀   (원본은 바깥에 2 를 한 겹 더 두르지만,
+                                    한글은 획이 촘촘해서 한 겹만 두릅니다)
 """
 from __future__ import annotations
 
 import argparse
 import os
 import sys
-from collections import defaultdict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common  # noqa: E402
 
-GLYPH_AT = 0x8E3F08         # 타일 번호 t 의 그림은 여기서 t*32 바이트 뒤
-GLYPH_LO = 0x30             # 이 타일부터가 우리가 통째로 쓰는 영역
-GLYPH_HI = 0x8E6700         # 글리프 영역 끝 (바로 뒤가 스프라이트 표)
-SPRITES_AT = 0x8E6718
+TABLES = (0x8E4208, 0x8E6718)   # 같은 글을 담은 두 프레임
 SPRITE_COUNT = 96
-OFFSCREEN_Y = 200           # 안 쓰는 칸은 화면 밖으로 내립니다
-
-STROKE, EDGE, RIM = 3, 1, 2  # 획 / 획 둘레 / 그 바깥
+GLYPH_AT = 0x8E4508             # attr2 == 0 인 글리프
+GLYPH_END = 0x8E6700            # 여기까지가 글리프 (바로 뒤가 표)
 CELL = 16
-FONT_SIZE = 12
-FONT_PATH_SMALL = "font/Galmuri7.ttf"
+FONT_SIZE = 14
+STROKE, EDGE, RIM = 3, 1, 2
+
+# 줄을 이루는 레코드. x 내림차순이 곧 읽는 순서입니다.
+LINES: dict[str, list[int]] = {
+    "L1": list(range(25, 37)),                     # どこまでもつづく　青い空と
+    "L2": list(range(10, 25)),                     # どこまでもつづく　青い海をうつし
+    "L3": list(range(0, 10)),                      # ここに　青の大地がある
+    "L4": [47] + list(range(67, 75)),              # この地に　すむものは
+    "L5": list(range(51, 66)),                     # たとえ　それが小さな命であろうと
+    "L6": list(range(37, 47)) + [48, 49, 50, 66],  # ＜青＞のいみを　しるものである
+    "L7": [85, 89, 90, 92, 93, 94, 95],            # ここは　青の大地
+    "L8": list(range(78, 85)) + [86, 87, 88, 91],  # すべての命が　いきる大地
+}
+DOTS = [75, 76, 77]             # 「・・・」 — 건드리지 않습니다
+
+# 원문은 줄마다 한 곳만 띄어 있습니다 (칸 사이가 두 배로 벌어진 자리).
+# 번역문도 그 자리에서 끊어야 틈이 엉뚱한 데 생기지 않습니다.
+#   L1·L2 8자 뒤 · L3·L5·L7 3자 뒤 · L4 4자 뒤 · L6 7자 뒤 · L8 6자 뒤
+TEXT: dict[str, str] = {
+    "L1": "끝도없이이어지는 푸른하늘",
+    "L2": "끝도없이이어지는 푸른바다를비춰",
+    "L3": "여기에 푸른대지가있다",
+    "L4": "이땅에서 사는것들은",
+    "L5": "그것이 비록작디작은목숨일지라도",
+    "L6": "「푸름」의뜻을 아는존재들이다",
+    "L7": "여기는 푸른대지",
+    "L8": "모든목숨들이 살아가는땅",
+}
 
 
 class NarrError(Exception):
@@ -58,32 +88,27 @@ class NarrError(Exception):
 
 def glyph_slots() -> int:
     """쓸 수 있는 16×16 글리프 칸 수."""
-    return (GLYPH_HI - (GLYPH_AT + GLYPH_LO * 32)) // (4 * 32)
+    return (GLYPH_END - GLYPH_AT) // (4 * 32)
 
 
-def read_sprites(rom: bytes) -> list[dict]:
-    """스프라이트 표를 읽습니다."""
+def read_sprites(rom: bytes, table: int) -> list[dict]:
     out = []
     for i in range(SPRITE_COUNT):
-        a = SPRITES_AT + i * 8
-        a0 = common.u16(rom, a)
+        a = table + i * 8
         a1 = common.u16(rom, a + 2)
-        a2 = common.u16(rom, a + 4)
         x = a1 & 0x1FF
-        out.append({"i": i, "y": a0 & 0xFF, "x": x - 512 if x >= 256 else x,
-                    "tile": a2 & 0x3FF, "a0": a0, "a1": a1, "a2": a2})
+        out.append({"i": i, "y": common.u8(rom, a), "x": x - 512 if x >= 256 else x,
+                    "tile": common.u16(rom, a + 4) & 0x3FF})
     return out
 
 
-def lines_of(sprites: list[dict]) -> dict[int, list[dict]]:
-    """y 값으로 줄을 나눕니다 (게임이 줄마다 y 를 더해 움직입니다)."""
-    rows: dict[int, list[dict]] = defaultdict(list)
-    for s in sprites:
-        rows[s["y"]].append(s)
-    return dict(rows)
+def order_of(sprites: list[dict], records: list[int]) -> list[int]:
+    """한 줄의 레코드를 **읽는 순서**(x 내림차순)로."""
+    return [s["i"] for s in sorted((sprites[i] for i in records),
+                                   key=lambda s: -s["x"])]
 
 
-def render_glyph(ch: str, font) -> bytearray:
+def render_cell(ch: str, font) -> bytearray:
     """글자 하나를 16×16 색 번호로. 획 3, 둘레 1, 그 바깥 2."""
     from PIL import Image, ImageDraw
     img = Image.new("L", (CELL, CELL), 0)
@@ -93,12 +118,10 @@ def render_glyph(ch: str, font) -> bytearray:
     src = img.load()
     ink = [[1 if src[x, y] > 110 else 0 for x in range(CELL)] for y in range(CELL)]
     out = bytearray(CELL * CELL)
-    for r, colour in ((0, STROKE), (1, EDGE), (2, RIM)):
+    for r, colour in ((0, STROKE), (1, EDGE)):
         for y in range(CELL):
             for x in range(CELL):
-                if out[y * CELL + x]:
-                    continue
-                if _within(ink, x, y, r):
+                if not out[y * CELL + x] and _within(ink, x, y, r):
                     out[y * CELL + x] = colour
     return out
 
@@ -112,12 +135,12 @@ def _within(ink, x: int, y: int, r: int) -> bool:
     return False
 
 
-def write_glyph(rom: bytearray, tile: int, cell: bytes) -> None:
+def write_cell(rom: bytearray, slot: int, cell: bytes) -> None:
     """16×16 색 번호를 타일 4장(좌상·우상·좌하·우하)으로 씁니다."""
     for j, (ox, oy) in enumerate(((0, 0), (8, 0), (0, 8), (8, 8))):
-        base = GLYPH_AT + (tile + j) * 32
-        if base + 32 > GLYPH_HI:
-            raise NarrError(f"글리프 영역을 넘습니다 (타일 0x{tile:03X})")
+        base = GLYPH_AT + (slot + j) * 32
+        if base + 32 > GLYPH_END:
+            raise NarrError(f"글리프 영역을 넘습니다 (attr2 0x{slot:03X})")
         for y in range(8):
             for x in range(0, 8, 2):
                 lo = cell[(oy + y) * CELL + ox + x]
@@ -125,101 +148,67 @@ def write_glyph(rom: bytearray, tile: int, cell: bytes) -> None:
                 rom[base + y * 4 + x // 2] = (lo & 0xF) | ((hi & 0xF) << 4)
 
 
-def write_sprite(rom: bytearray, i: int, y: int, x: int, tile: int) -> None:
-    a = SPRITES_AT + i * 8
-    common.w16(rom, a, (y & 0xFF) | (0x1 << 14))            # 크기 1 = 16×16
-    common.w16(rom, a + 2, (x & 0x1FF) | (0x1 << 14))       # 반전 없음
-    common.w16(rom, a + 4, tile & 0x3FF)
+def set_glyph(rom: bytearray, table: int, record: int, slot: int) -> None:
+    """레코드의 글리프만 바꿉니다 (자리·플래그는 그대로)."""
+    common.w16(rom, table + record * 8 + 4, slot & 0x3FF)
 
 
-def hide_sprite(rom: bytearray, i: int) -> None:
-    write_sprite(rom, i, OFFSCREEN_Y, 0, GLYPH_LO)
-
-
-def layout(rom: bytearray, texts: dict[int, str], font, reverse: bool) -> dict:
-    """줄마다 글자를 앉힙니다. `texts` 는 {y: 한글 문장}.
-
-    같은 글자는 글리프를 함께 씁니다. 자리가 모자라면 오류를 냅니다.
-    """
-    rows = lines_of(read_sprites(rom))
+def translate(rom: bytearray, texts: dict[str, str], font) -> dict:
+    """줄마다 한글을 앉힙니다. `attr2` 만 고칩니다."""
+    sprites = read_sprites(rom, TABLES[1])
+    limit = min(sprites[i]["tile"] for i in DOTS)   # 「・・・」 글리프는 남겨 둡니다
     slots: dict[str, int] = {}
-    next_tile = GLYPH_LO
-    used = 0
-    for y, text in texts.items():
-        if y not in rows:
-            raise NarrError(f"y={y} 줄이 표에 없습니다")
-        cells = rows[y]
-        chars = [c for c in text if c != "　"]
-        if len(chars) > len(cells):
-            raise NarrError(f"y={y}: 글자 {len(chars)}개 > 칸 {len(cells)}개")
-        for ch in chars:
-            if ch in slots:
-                continue
-            if next_tile * 32 + GLYPH_AT + 4 * 32 > GLYPH_HI:
-                raise NarrError("글리프 칸이 모자랍니다")
-            write_glyph(rom, next_tile, render_glyph(ch, font))
-            slots[ch] = next_tile
-            next_tile += 4
-        order = sorted(cells, key=lambda s: -s["x"] if reverse else s["x"])
-        span = len(text.replace("　", "　"))
-        x0 = -(_width(text) // 2)
-        px = x0
-        pos = 0
-        for ch in text:
-            if ch == "　":
-                px += CELL // 2
-                continue
-            s = order[pos]
-            write_sprite(rom, s["i"], s["y"], -px - CELL if reverse else px,
-                         slots[ch])
-            px += CELL
-            pos += 1
-            used += 1
-        for s in order[pos:]:
-            hide_sprite(rom, s["i"])
-    for y, cells in rows.items():
-        if y not in texts:
+    nxt = 0
+
+    def slot_for(ch: str) -> int:
+        nonlocal nxt
+        if ch not in slots:
+            if nxt + 4 > limit:
+                raise NarrError(f"글리프 칸 부족 (0x{limit:03X} 앞까지만 쓸 수 있습니다)")
+            write_cell(rom, nxt, render_cell(ch, font))
+            slots[ch] = nxt
+            nxt += 4
+        return slots[ch]
+
+    plan: dict[int, int] = {}
+    for name, records in LINES.items():
+        text = texts.get(name)
+        if text is None:
             continue
-    return {"글리프": len(slots), "칸": used, "여유 글리프": glyph_slots() - len(slots)}
+        chars = [c for c in text if c != " "]
+        if len(chars) > len(records):
+            raise NarrError(f"{name}: 글자 {len(chars)}개 > 칸 {len(records)}개")
+        for pos, rec in enumerate(order_of(sprites, records)):
+            plan[rec] = slot_for(chars[pos]) if pos < len(chars) else -1
+    blank = -1
+    if any(v == -1 for v in plan.values()):
+        blank = nxt
+        write_cell(rom, blank, bytearray(CELL * CELL))
+        nxt += 4
+    for rec, slot in plan.items():
+        for table in TABLES:
+            set_glyph(rom, table, rec, blank if slot == -1 else slot)
+    return {"줄": sum(1 for n in LINES if n in texts),
+            "글자": sum(1 for v in plan.values() if v != -1),
+            "글리프": len(slots), "여유 칸": (limit - nxt) // 4}
 
 
-def _width(text: str) -> int:
-    return sum(CELL // 2 if c == "　" else CELL for c in text)
-
-
-def probe(rom: bytearray, font, lo: int = 0) -> dict:
-    """레코드 번호를 두 자리로 새깁니다 — 화면에서 자리를 읽기 위한 시험용.
-
-    글리프 칸이 레코드보다 적어서 `lo` 부터 채우고 나머지는 숨깁니다.
-    """
-    from PIL import ImageFont
-    small = ImageFont.truetype(FONT_PATH_SMALL, 8)
-    n = min(glyph_slots(), SPRITE_COUNT - lo)
+def probe(rom: bytearray) -> dict:
+    """글리프 칸마다 번호를 새깁니다 — 화면에서 자리를 읽기 위한 시험용."""
+    from PIL import Image, ImageDraw, ImageFont
+    small = ImageFont.truetype("font/Galmuri7.ttf", 8)
+    n = glyph_slots()
     for k in range(n):
-        write_glyph(rom, GLYPH_LO + k * 4, _two_digits(lo + k, small))
-    for s in read_sprites(rom):
-        i = s["i"]
-        if lo <= i < lo + n:
-            write_sprite(rom, i, s["y"], s["x"], GLYPH_LO + (i - lo) * 4)
-        else:
-            hide_sprite(rom, i)
-    return {"보이는 레코드": f"{lo}~{lo + n - 1}"}
-
-
-def _two_digits(v: int, font) -> bytearray:
-    """두 자리 숫자를 16×16 칸에 (획 3, 둘레 1)."""
-    from PIL import Image, ImageDraw
-    img = Image.new("L", (CELL, CELL), 0)
-    d = ImageDraw.Draw(img)
-    d.text((1, 3), f"{v:02d}", font=font, fill=255)
-    src = img.load()
-    ink = [[1 if src[x, y] > 110 else 0 for x in range(CELL)] for y in range(CELL)]
-    out = bytearray(CELL * CELL)
-    for y in range(CELL):
-        for x in range(CELL):
-            if ink[y][x]:
-                out[y * CELL + x] = STROKE
-    return out
+        img = Image.new("L", (CELL, CELL), 0)
+        ImageDraw.Draw(img).text((1, 3), f"{k:02d}", font=small, fill=255)
+        src = img.load()
+        cell = bytearray(CELL * CELL)
+        for y in range(CELL):
+            for x in range(CELL):
+                if src[x, y] > 110:
+                    cell[y * CELL + x] = STROKE
+        write_cell(rom, k * 4, cell)
+    return {"칸": n}
 
 
 def main() -> int:
@@ -227,29 +216,23 @@ def main() -> int:
     ap.add_argument("rom")
     ap.add_argument("-o", "--out")
     ap.add_argument("--font", default="font/Galmuri14.ttf")
-    ap.add_argument("--probe", type=int, default=None, metavar="시작",
-                help="레코드 번호를 새긴 시험용 롬 (이 번호부터)")
+    ap.add_argument("--probe", action="store_true", help="칸 번호를 새긴 시험용 롬")
     args = ap.parse_args()
 
     from PIL import ImageFont
     if not os.path.exists(args.font):
         print(f"[!] 폰트가 없습니다: {args.font}")
         return 1
-    font = ImageFont.truetype(args.font, FONT_SIZE)
     rom = bytearray(common.load(args.rom))
     try:
-        stats = (probe(rom, font, args.probe) if args.probe is not None
-                 else layout(rom, TEXT, font, REVERSE))
+        stats = (probe(rom) if args.probe
+                 else translate(rom, TEXT, ImageFont.truetype(args.font, FONT_SIZE)))
     except NarrError as e:
         print(f"[!] {e}")
         return 1
     common.save(args.out or args.rom, bytes(rom))
     print("  오프닝 나레이션  " + " · ".join(f"{k} {v}" for k, v in stats.items()))
     return 0
-
-
-REVERSE = False
-TEXT: dict[int, str] = {}
 
 
 if __name__ == "__main__":

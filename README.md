@@ -57,6 +57,7 @@
 | 폰트 · 출력 루틴 | ✅ 완료 | 출력 훅 + 음절 색인, **음절 수 제한 없음** |
 | 삽입 파이프라인 | ✅ 완료 | `make insert` 하나로 글리프·훅·문자열·타이틀까지 |
 | 타이틀 그래픽 | ✅ 완료 | 타이틀 로고·부제 + 오프닝 영문 로고 재작화 |
+| 오프닝 나레이션 | ✅ 완료 | 16×16 스프라이트 글리프 8줄 교체 |
 
 ### 번역 (12,348 / 16,674 · **74%**)
 
@@ -125,7 +126,7 @@ cp /경로/Galmuri14.ttf font/                # 본문용 16×16 (OFL, 저장소
 cp /경로/Galmuri7.ttf  font/                # 메뉴용 8×8 · 타이틀 부제
 
 make check      # ROM SHA-1 대조
-make test       # 테스트 146개
+make test       # 테스트 158개
 make script     # 원문 덤프 -> script/ja/
 make insert     # 번역문 삽입 -> build/patched.gba
 make width      # 창 밖으로 잘리는 줄 찾기
@@ -157,10 +158,11 @@ make            # 전체 타깃 목록
 | `tools/kohook.py` | 한글 출력 훅 (THUMB) |
 | `tools/kowidth.py` | 번역문 폭 검사 (잘림 방지) |
 | `tools/kotitle.py` | 타이틀 로고·부제 · 오프닝 영문 로고 한글화 |
+| `tools/konarr.py` | 오프닝 나레이션 한글화 (스프라이트 글리프) |
 | `tools/inserttext.py` | 글리프·훅·번역문 삽입 (`make insert`) |
 | `tools/patch.py` | IPS / BPS 패치 생성 · 적용 |
 | **테스트** | |
-| `tests/` | `make test` — 단위 + 실 ROM 회귀 146개 |
+| `tests/` | `make test` — 단위 + 실 ROM 회귀 158개 |
 
 자세한 작업 흐름은 [`docs/WORKFLOW.md`](docs/WORKFLOW.md)를 참고하세요.
 
