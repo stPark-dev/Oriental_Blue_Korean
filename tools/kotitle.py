@@ -82,9 +82,11 @@ SUBTITLE_TILES = tuple(range(0x160, 0x166))    # 「青の天外」 48x8
 SUBTITLE_TEXT = "청의 천외"
 SUBTITLE_GLYPH = 13         # 원본에서 이 색 이상이 글자, 아래는 파란 판
 
-WIDTHS = tuple(range(208, 151, -8))   # 큰 쪽부터 — 처음 통과한 크기를 씁니다
-THRESHOLDS = (112, 128, 144)
-LOSS_OK = 0.05              # 잉크의 5%까지는 잘려도 글자가 읽힙니다
+# 칠할 수 있는 칸이 20~23행(32px)에 몰려 있어 원본 비율(4.4:1)대로 키우면
+# 글자 위아래가 잘립니다. 가로로 1.3배쯤 늘여 납작하게 앉힙니다.
+HEIGHTS = (38, 36, 34)
+WIDTHS = tuple(range(224, 195, -4))
+THRESHOLDS = (144, 156)
 
 WORDMARK_FRACTION = 0.735   # 로고 그림에서 워드마크가 차지하는 세로 비율
 BODY_ALPHA = 200            # 글자 본체로 볼 알파 (아래는 바깥 번짐)
@@ -250,40 +252,34 @@ def _wordmark_body(path: str):
     return body
 
 
-def _shape(body, width: int, thr: int):
-    """줄여서 (글자 마스크, 테두리, 폭, 높이). 자리와 무관하니 한 번만 만듭니다."""
+def _shape(body, width: int, height: int, thr: int):
+    """줄여서 (글자, 테두리, 잉크 위치, 폭, 높이). 자리와 무관하니 한 번만 만듭니다."""
     from PIL import Image
-    h = max(1, round(body.height * width / body.width))
-    if h > H - 4:
-        h = H - 4
-        width = max(1, round(body.width * h / body.height))
-    small = body.resize((width, h), Image.BOX)      # 면적 평균 — 가는 획을 살린다
+    small = body.resize((width, height), Image.BOX)   # 면적 평균 — 가는 획을 살린다
     sp = small.load()
-    w2, h2 = width + 2, h + 2                      # 테두리가 나갈 1픽셀 여백
+    w2, h2 = width + 2, height + 2                    # 테두리가 나갈 1픽셀 여백
     mask = bytearray(w2 * h2)
-    for y in range(h):
+    for y in range(height):
         for x in range(width):
             if sp[x, y] >= thr:
                 mask[(y + 1) * w2 + x + 1] = 1
     mask = despeckle(mask, w2, h2)
-    return mask, outline_of(mask, w2, h2), w2, h2
+    ring = outline_of(mask, w2, h2)
+    ink = [divmod(i, w2) for i in range(w2 * h2) if mask[i] or ring[i]]
+    return mask, ring, ink, w2, h2
 
 
 def _lost(shape, free: bytes, dx: int, dy: int):
     """띠 위 (dx, dy) 에 놓았을 때 (잘린 화소, 전체, 왼쪽 위 모서리)."""
-    mask, ring, w2, h2 = shape
+    _, _, ink, w2, h2 = shape
     x0 = max(0, min(W - w2, (W - w2) // 2 + dx))
     y0 = max(0, min(H - h2, (H - h2) // 2 + dy))
-    lost = total = 0
-    for y in range(h2):
-        row = (y0 + y) * W + x0
-        for x in range(w2):
-            i = y * w2 + x
-            if mask[i] or ring[i]:
-                total += 1
-                if not free[row + x]:
-                    lost += 1
-    return lost, total, x0, y0
+    base = y0 * W + x0
+    lost = 0
+    for y, x in ink:
+        if not free[base + y * W + x]:
+            lost += 1
+    return lost, len(ink), x0, y0
 
 
 def _free_mask() -> bytearray:
@@ -306,30 +302,23 @@ def render_wordmark(tiles: bytearray, logo: str) -> dict:
 
     # 칠할 수 있는 칸이 듬성듬성해서 무작정 크게 그리면 획이 뜯깁니다.
     # 손실이 LOSS_OK 이하인 것 중 **가장 큰 크기**를 고릅니다.
+    # 잘리는 잉크가 가장 적은 크기·자리를 고릅니다. 같으면 큰 쪽.
     best = None
-    for width in WIDTHS:
-        cand = None
-        for thr in THRESHOLDS:
-            shape = _shape(body, width, thr)
-            for dx in range(-6, 7):
-                for dy in range(-12, 13):
-                    lost, total, x0, y0 = _lost(shape, free, dx, dy)
-                    if total < 800:
-                        continue
-                    score = lost / total
-                    if cand is None or score < cand[0]:
-                        cand = (score, width, thr, dx, dy, lost, total, shape, x0, y0)
-        if cand is None:
-            continue
-        if best is None or cand[0] < best[0]:
-            best = cand
-        if cand[0] <= LOSS_OK:
-            best = cand
-            break
+    for height in HEIGHTS:
+        for width in WIDTHS:
+            for thr in THRESHOLDS:
+                shape = _shape(body, width, height, thr)
+                for dx in range(-4, 5):
+                    for dy in range(-3, 4):
+                        lost, total, x0, y0 = _lost(shape, free, dx, dy)
+                        key = (lost, -width * height)
+                        if best is None or key < best[0]:
+                            best = (key, width, height, thr, dx, dy,
+                                    lost, total, shape, x0, y0)
     if best is None:
         raise TitleError("로고를 띠에 앉힐 수 없습니다")
-    _, width, thr, dx, dy, lost, total, shape, x0, y0 = best
-    mask, ring, w2, h2 = shape
+    _, width, height, thr, dx, dy, lost, total, shape, x0, y0 = best
+    mask, ring, _, w2, h2 = shape
 
     out = bytearray(wall)
     for y in range(h2):
@@ -357,7 +346,7 @@ def render_wordmark(tiles: bytearray, logo: str) -> dict:
         set_tile(tiles, idx, px)
         painted += 1
     return {"칠한 타일": painted, "잘린 화소": lost, "글자 화소": total,
-            "폭": width, "밀기": (dx, dy)}
+            "크기": (width, height), "밀기": (dx, dy)}
 
 
 def render_subtitle(tiles: bytearray, font: str, text: str = SUBTITLE_TEXT) -> dict:
@@ -440,7 +429,8 @@ def main() -> int:
         print(f"[!] {e}")
         return 1
     common.save(args.out or args.rom, bytes(rom))
-    print(f"  타이틀 로고    칠한 타일 {stats['칠한 타일']}개 · "
+    print(f"  타이틀 로고    {stats['크기'][0]}x{stats['크기'][1]} · "
+          f"칠한 타일 {stats['칠한 타일']}개 · "
           f"잘린 화소 {stats['잘린 화소']}/{stats['글자 화소']} "
           f"({stats['잘린 화소'] / stats['글자 화소'] * 100:.1f}%)")
     print(f"  부제           「{SUBTITLE_TEXT}」 {stats['부제 화소']}화소")
