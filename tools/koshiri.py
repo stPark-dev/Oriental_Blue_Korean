@@ -377,19 +377,64 @@ def cmd_items(rom: bytes, args) -> int:
     return 0
 
 
+def chain(rom: bytes, ko: dict[int, str], chars: dict):
+    """(레코드, 앞 글자, 낱말, 뒤 글자) 목록과 막다른 글자 집합."""
+    rows = []
+    heads: set[str] = set()
+    for r, ja, kr in _rows(rom, ko, chars):
+        head, word, tail = kr if any(kr) else ja
+        rows.append((r, head, word, tail))
+        if word and head:
+            heads.add(head)
+    dead = {t for _, _, w, t in rows if w and t and t not in heads}
+    return rows, dead
+
+
+def cmd_patch(rom: bytes, args) -> int:
+    """「지는 낱말」 표식을 번역문에 맞춰 다시 씁니다.
+
+    원본의 규칙은 **「아이템 낱말이면서 뒤 글자가 막다른 글자」** 입니다.
+    일본어에서는 그 글자가 `ん` 하나뿐이라 42개가 걸려 있었는데, 한글로
+    옮기면 막다른 글자가 달라집니다. 표식을 그대로 두면 이을 수 있는
+    낱말(`천제의　검` → `검은　두건`)이 내자마자 지는 낱말이 되어 버립니다.
+    """
+    chars = mktbl.build(rom)
+    ko = read_ko(os.path.join(args.ko, "tDF9088.txt"))
+    if not ko:
+        print("  끝말잇기       건너뜀 (번역문 없음)")
+        return 0
+
+    base = addresses(rom)["records"]
+    rows, dead = chain(rom, ko, chars)
+    changed = losing = 0
+    for r, _head, word, tail in rows:
+        want = 1 if (r.is_item and word and tail in dead) else 0
+        losing += want
+        if want != r.losing:
+            changed += 1
+            common.w16(rom, base + RECORD_SIZE * r.index + 10, want)
+    common.save(args.out or args.rom, bytes(rom))
+    print(f"  끝말잇기       막다른 글자 {len(dead)}종 · 지는 낱말 {losing}개 "
+          f"(표식 {changed}개 수정)")
+    return 0
+
+
 def main() -> int:
     p = argparse.ArgumentParser(description="끝말잇기 낱말표 분석·검증")
     sub = p.add_subparsers(dest="cmd", required=True)
     for name, fn, help_ in (("info", cmd_info, "표 위치와 제약 요약"),
                             ("dump", cmd_dump, "레코드 전체 출력"),
                             ("check", cmd_check, "번역문 사슬·버퍼 검사"),
-                            ("items", cmd_items, "아이템 낱말 자동 채우기")):
+                            ("items", cmd_items, "아이템 낱말 자동 채우기"),
+                            ("patch", cmd_patch, "「지는 낱말」 표식 재계산")):
         s = sub.add_parser(name, help=help_)
         s.add_argument("rom")
         s.add_argument("--ko", default="script/ko")
         s.add_argument("--limit", type=int, default=20)
         if name == "items":
             s.add_argument("--write", action="store_true")
+        if name == "patch":
+            s.add_argument("-o", "--out")
         s.set_defaults(fn=fn)
     args = p.parse_args()
     rom = common.load(args.rom)
