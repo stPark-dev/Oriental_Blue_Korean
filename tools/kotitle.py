@@ -33,6 +33,14 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common  # noqa: E402
 import gbalz  # noqa: E402
 
+INTRO_AT = 0x6BBDF0         # 오프닝 끝 영문 로고 LZ77 블록
+INTRO_LEN = 2276            # 압축 길이 — 바로 뒤가 타이틀 타일셋이라 늘릴 수 없다
+INTRO_W, INTRO_H = 256, 64  # 8bpp 타일 16x16 장을 좌/우 반으로 이어 붙인 그림
+INTRO_PLATE = 2             # 판 색 (글자는 색 0 으로 파고 색 1 로 두른다)
+INTRO_BOX = (2, 8, 234, 53)  # 원본 글자가 놓인 자리 (x, y, 폭, 높이)
+INTRO_HEIGHTS = (53, 50, 48, 46, 44, 42, 40)   # 큰 쪽부터 — 압축이 자리에 맞을 때까지
+INTRO_THRESHOLDS = (160, 144, 128)
+
 TILES_AT = 0x6BC6D4         # 타이틀 타일셋 LZ77 블록
 TILES_LEN = 9577            # 원본 압축 길이 — 이 안에 들어가야 제자리에 쓴다
 TILE_BASE = 0x20            # 블롭 타일 0 == VRAM 타일 0x20
@@ -40,6 +48,7 @@ TILE_BASE = 0x20            # 블롭 타일 0 == VRAM 타일 0x20
 W, H = 256, 64              # 워드마크 띠 (32타일 x 8줄)
 
 TRANSPARENT, WHITE = 0, 15
+OUTLINE_COLOR = 1           # 오프닝 로고의 흰 테두리 색
 
 # BG2(화면블록 0) 맵 18~25행. 24행에는 원본 글자의 아래쪽이, 25행에는 로고
 # 아래 날개 장식(`0x0D0`~`0x0D7`)이 있어 여기까지 지워야 깨끗합니다. 한 칸은 GBA 타일맵 엔트리(팔레트<<12 | 플립 | 번호).
@@ -430,6 +439,89 @@ def render_subtitle(tiles: bytearray, font: str, text: str = SUBTITLE_TEXT) -> d
     return {"부제 화소": ink}
 
 
+# --- 오프닝 영문 로고 ---------------------------------------------------
+
+def load_intro(rom: bytes) -> bytearray:
+    """오프닝 로고 타일(8bpp 254장)을 풀어서 돌려줍니다."""
+    raw, _ = gbalz.decompress(bytes(rom), INTRO_AT)
+    return bytearray(raw)
+
+
+def intro_canvas(tiles: bytes) -> bytearray:
+    """타일 16x16 장을 좌/우 반으로 이어 붙여 256x64 그림으로."""
+    out = bytearray(INTRO_W * INTRO_H)
+    for half in (0, 1):
+        for tr in range(8):
+            for tc in range(16):
+                t = (half * 8 + tr) * 16 + tc
+                if (t + 1) * 64 > len(tiles):
+                    continue
+                for y in range(8):
+                    src = t * 64 + y * 8
+                    dst = (tr * 8 + y) * INTRO_W + half * 128 + tc * 8
+                    out[dst:dst + 8] = tiles[src:src + 8]
+    return out
+
+
+def set_intro_canvas(tiles: bytearray, canvas: bytes) -> None:
+    for half in (0, 1):
+        for tr in range(8):
+            for tc in range(16):
+                t = (half * 8 + tr) * 16 + tc
+                if (t + 1) * 64 > len(tiles):
+                    continue
+                for y in range(8):
+                    src = (tr * 8 + y) * INTRO_W + half * 128 + tc * 8
+                    tiles[t * 64 + y * 8:t * 64 + y * 8 + 8] = canvas[src:src + 8]
+
+
+def _draw_intro(tiles: bytearray, body, height: int, thr: int) -> tuple:
+    """판을 깨끗이 지우고 한글을 앉힙니다. (폭, 높이, 글자 화소)"""
+    canvas = bytearray(intro_canvas(tiles))
+    x0, y0, bw, bh = INTRO_BOX
+    for y in range(INTRO_H):                      # 원본 글자 자리를 판 색으로
+        row = y * INTRO_W
+        for x in range(240):
+            canvas[row + x] = INTRO_PLATE
+    width = min(bw, max(1, round(body.width * height / body.height)))
+    mask, ring, _, w2, h2 = _shape(body, width, height, thr)
+    px0 = x0 + (bw - w2) // 2
+    py0 = y0 + (bh - h2) // 2
+    for y in range(h2):
+        row = (py0 + y) * INTRO_W + px0
+        for x in range(w2):
+            if ring[y * w2 + x]:
+                canvas[row + x] = OUTLINE_COLOR
+    ink = 0
+    for y in range(h2):
+        row = (py0 + y) * INTRO_W + px0
+        for x in range(w2):
+            if mask[y * w2 + x]:
+                canvas[row + x] = 0
+                ink += 1
+    set_intro_canvas(tiles, canvas)
+    return width, height, ink
+
+
+def build_intro(rom: bytes, logo: str):
+    """오프닝 영문 로고를 한글로 바꿉니다 (압축본, 통계).
+
+    타이틀과 달리 맵이 순차라 **칸을 통째로 쓸 수 있습니다.** 대신 압축본이
+    원래 자리 2,276바이트에 들어가야 해서, 큰 쪽부터 줄이며 맞춥니다.
+    """
+    body = _wordmark_body(logo)
+    for height in INTRO_HEIGHTS:
+        for thr in INTRO_THRESHOLDS:
+            tiles = load_intro(rom)
+            width, height2, ink = _draw_intro(tiles, body, height, thr)
+            packed = gbalz.compress(bytes(tiles))
+            if len(packed) <= INTRO_LEN:
+                return packed, {"오프닝 크기": (width, height2),
+                                "오프닝 화소": ink,
+                                "오프닝 압축": len(packed)}
+    raise TitleError("오프닝 로고를 자리 안에 넣지 못했습니다")
+
+
 # --- 빌드 ------------------------------------------------------------------
 
 def build(rom: bytes, logo: str, font: str):
@@ -447,9 +539,12 @@ def build(rom: bytes, logo: str, font: str):
 
 
 def apply(rom: bytearray, logo: str, font: str) -> dict:
-    """ROM 을 제자리에서 고칩니다."""
+    """ROM 을 제자리에서 고칩니다 (타이틀 + 오프닝 로고)."""
     packed, stats = build(rom, logo, font)
     rom[TILES_AT:TILES_AT + len(packed)] = packed
+    ipacked, istats = build_intro(rom, logo)
+    rom[INTRO_AT:INTRO_AT + len(ipacked)] = ipacked
+    stats.update(istats)
     return stats
 
 
@@ -479,6 +574,8 @@ def main() -> int:
     print(f"  부제           「{SUBTITLE_TEXT}」 {stats['부제 화소']}화소")
     print(f"  타일셋         {stats['압축']:,}바이트 "
           f"(자리 {TILES_LEN:,}, 여유 {stats['여유']:,})")
+    print(f"  오프닝 로고    {stats['오프닝 크기'][0]}x{stats['오프닝 크기'][1]} · "
+          f"{stats['오프닝 압축']:,}바이트 (자리 {INTRO_LEN:,})")
     return 0
 
 

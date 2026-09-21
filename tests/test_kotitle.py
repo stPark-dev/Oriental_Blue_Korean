@@ -160,12 +160,52 @@ class RomTest(unittest.TestCase):
         raw, _ = gbalz.decompress(bytes(out), kotitle.TILES_AT)
         self.assertEqual(raw, gbalz.decompress(bytes(packed) + b"\x00" * 8, 0)[0])
 
-    def test_타일셋_밖_롬은_그대로다(self):
+    def test_두_블록_밖_롬은_그대로다(self):
         out = bytearray(self.rom)
         kotitle.apply(out, LOGO, FONT)
-        lo, hi = kotitle.TILES_AT, kotitle.TILES_AT + kotitle.TILES_LEN
+        lo = kotitle.INTRO_AT
+        mid = kotitle.INTRO_AT + kotitle.INTRO_LEN
+        hi = kotitle.TILES_AT + kotitle.TILES_LEN
+        self.assertEqual(kotitle.TILES_AT, mid, "두 블록은 붙어 있습니다")
         self.assertEqual(bytes(self.rom[:lo]), bytes(out[:lo]))
         self.assertEqual(bytes(self.rom[hi:]), bytes(out[hi:]))
+
+
+class IntroTest(unittest.TestCase):
+    """오프닝 끝의 영문 로고 — 맵이 순차라 칸을 통째로 쓸 수 있습니다."""
+
+    @classmethod
+    def setUpClass(cls):
+        for p, why in ((ROM, "rom/baserom.gba 없음"), (LOGO, "art/title_ko.png 없음")):
+            if not os.path.exists(p):
+                raise unittest.SkipTest(why)
+        cls.rom = common.load(ROM)
+
+    def test_타일은_254장(self):
+        self.assertEqual(len(kotitle.load_intro(self.rom)), 254 * 64)
+
+    def test_그림을_폈다_되돌리면_같다(self):
+        tiles = kotitle.load_intro(self.rom)
+        canvas = kotitle.intro_canvas(tiles)
+        self.assertEqual(len(canvas), kotitle.INTRO_W * kotitle.INTRO_H)
+        out = bytearray(len(tiles))
+        kotitle.set_intro_canvas(out, canvas)
+        self.assertEqual(bytes(out), bytes(tiles))
+
+    def test_재압축이_원본_자리에_들어간다(self):
+        packed, stats = kotitle.build_intro(self.rom, LOGO)
+        self.assertLessEqual(len(packed), kotitle.INTRO_LEN)
+        self.assertGreater(stats["오프닝 화소"], 1000)
+
+    def test_판_색은_그대로_두고_글자만_판다(self):
+        packed, _ = kotitle.build_intro(self.rom, LOGO)
+        out = bytearray(self.rom)
+        out[kotitle.INTRO_AT:kotitle.INTRO_AT + len(packed)] = packed
+        canvas = kotitle.intro_canvas(kotitle.load_intro(out))
+        colours = set(canvas)
+        self.assertLessEqual(colours, {0, 1, kotitle.INTRO_PLATE})
+        self.assertIn(0, colours)          # 글자 구멍
+        self.assertIn(1, colours)          # 흰 테두리
 
 
 if __name__ == "__main__":
