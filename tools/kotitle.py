@@ -6,7 +6,7 @@
 부터 비압축으로 있습니다.
 
 **타일맵은 ROM 에 없습니다.** 런타임에 만들어지므로 평문에도, LZ77 블록에도
-없습니다. 그래서 워드마크 띠(BG2 맵 18~23행)의 맵을 분석해 `BAND_MAP` 상수로
+없습니다. 그래서 워드마크 띠(BG2 맵 18~24행)의 맵을 분석해 `BAND_MAP` 상수로
 들고 있습니다. 재현 방법은 `docs/ROM_NOTES.md` 를 보세요.
 
 핵심은 **원본 글자가 색칠된 글자가 아니라는 점**입니다. 돌벽 그림에서 글자
@@ -37,11 +37,11 @@ TILES_AT = 0x6BC6D4         # 타이틀 타일셋 LZ77 블록
 TILES_LEN = 9577            # 원본 압축 길이 — 이 안에 들어가야 제자리에 쓴다
 TILE_BASE = 0x20            # 블롭 타일 0 == VRAM 타일 0x20
 
-W, H = 256, 48              # 워드마크 띠 (32타일 x 6줄)
+W, H = 256, 56              # 워드마크 띠 (32타일 x 7줄)
 
 TRANSPARENT, WHITE = 0, 15
 
-# BG2(화면블록 0) 맵 18~23행. 한 칸은 GBA 타일맵 엔트리(팔레트<<12 | 플립 | 번호).
+# BG2(화면블록 0) 맵 18~24행. 24행까지 넣어야 원본 글자의 아래쪽이 지워집니다. 한 칸은 GBA 타일맵 엔트리(팔레트<<12 | 플립 | 번호).
 BAND_MAP = (
     "1420 1040 1041 1042 1043 1004 1005 1006 1047 1008 1009 100A 100B 100C 104D 104E"
     " 140E 140D 140C 1048 1049 104A 104B 104C 106F 108F 1404 1403 2402 2401 1433 1020",
@@ -55,21 +55,25 @@ BAND_MAP = (
     " 14CE 1070 1071 1072 1073 1074 1075 1076 1077 1078 1079 107A 107B 107C 107D 1020",
     "1433 10E0 10E1 10E2 10E3 10E4 10E5 10E6 10E7 10E8 10E9 10EA 10EB 10EC 10ED 10EE"
     " 14EE 1090 1091 1092 1093 1094 1095 1096 1097 1098 1099 109A 109B 109C 109D 1033",
+    "1420 1033 2044 1045 1046 1004 1005 1006 1007 1008 1009 100A 102B 10B1 20B2 20B3"
+    " 20B4 10B5 10B6 142B 142A 1409 1408 1407 1406 1405 1404 1403 2402 2401 1433 1020",
 )
 
-# 이 띠 안에서만 쓰여 덮어써도 안전한 타일. 두 번 쓰이더라도 두 자리 모두
-# BG2 자기 맵 안이면 포함했습니다 (짝은 장식 테두리 줄이라 티가 안 납니다).
+# 띠 밖에서 거의 안 쓰이는 타일. 여러 곳에서 쓰는 타일을 고치면 그 자리마다
+# 글자 조각이 찍힙니다. 맵 0~2행 장식 줄에 최대 4번까지만 겹치는 것을 허용해
+# 155칸을 얻었습니다 — 더 조이면 글자 한가운데가 뚫립니다.
 PAINTABLE = frozenset((
     0x02F, 0x030, 0x031, 0x032, 0x034, 0x035, 0x036, 0x037, 0x038, 0x039, 0x03A, 0x03B,
-    0x03C, 0x03D, 0x040, 0x041, 0x042, 0x043, 0x047, 0x048, 0x049, 0x04A, 0x04B, 0x04C,
-    0x04D, 0x04E, 0x04F, 0x051, 0x052, 0x054, 0x055, 0x056, 0x057, 0x058, 0x059, 0x05A,
-    0x05B, 0x05C, 0x05D, 0x060, 0x061, 0x062, 0x063, 0x064, 0x065, 0x066, 0x067, 0x068,
-    0x069, 0x06A, 0x06B, 0x06C, 0x06D, 0x06E, 0x06F, 0x070, 0x071, 0x072, 0x073, 0x074,
-    0x075, 0x076, 0x077, 0x078, 0x079, 0x07A, 0x07B, 0x07C, 0x07D, 0x080, 0x081, 0x082,
-    0x083, 0x084, 0x085, 0x086, 0x087, 0x088, 0x089, 0x08A, 0x08B, 0x08C, 0x08D, 0x08E,
-    0x08F, 0x090, 0x091, 0x092, 0x093, 0x094, 0x095, 0x096, 0x097, 0x098, 0x099, 0x09A,
-    0x09B, 0x09C, 0x09D, 0x0A0, 0x0A1, 0x0A2, 0x0A3, 0x0A4, 0x0A5, 0x0A6, 0x0A7, 0x0A8,
-    0x0A9, 0x0AA, 0x0AB, 0x0AD, 0x0AE, 0x0C1, 0x0C2, 0x0C3, 0x0C5, 0x0C6, 0x0C7, 0x0C8,
+    0x03C, 0x03D, 0x040, 0x041, 0x042, 0x043, 0x044, 0x045, 0x046, 0x047, 0x048, 0x049,
+    0x04A, 0x04B, 0x04C, 0x04D, 0x04E, 0x04F, 0x051, 0x052, 0x054, 0x055, 0x056, 0x057,
+    0x058, 0x059, 0x05A, 0x05B, 0x05C, 0x05D, 0x060, 0x061, 0x062, 0x063, 0x064, 0x065,
+    0x066, 0x067, 0x068, 0x069, 0x06A, 0x06B, 0x06C, 0x06D, 0x06E, 0x06F, 0x070, 0x071,
+    0x072, 0x073, 0x074, 0x075, 0x076, 0x077, 0x078, 0x079, 0x07A, 0x07B, 0x07C, 0x07D,
+    0x080, 0x081, 0x082, 0x083, 0x084, 0x085, 0x086, 0x087, 0x088, 0x089, 0x08A, 0x08B,
+    0x08C, 0x08D, 0x08E, 0x08F, 0x090, 0x091, 0x092, 0x093, 0x094, 0x095, 0x096, 0x097,
+    0x098, 0x099, 0x09A, 0x09B, 0x09C, 0x09D, 0x0A0, 0x0A1, 0x0A2, 0x0A3, 0x0A4, 0x0A5,
+    0x0A6, 0x0A7, 0x0A8, 0x0A9, 0x0AA, 0x0AB, 0x0AC, 0x0AD, 0x0AE, 0x0B1, 0x0B2, 0x0B3,
+    0x0B4, 0x0B5, 0x0B6, 0x0C0, 0x0C1, 0x0C2, 0x0C3, 0x0C4, 0x0C5, 0x0C6, 0x0C7, 0x0C8,
     0x0C9, 0x0CA, 0x0CB, 0x0CC, 0x0CD, 0x0CE, 0x0E0, 0x0E1, 0x0E2, 0x0E3, 0x0E4, 0x0E5,
     0x0E6, 0x0E7, 0x0E8, 0x0E9, 0x0EA, 0x0EB, 0x0EC, 0x0ED, 0x0EE,
 ))
@@ -77,6 +81,10 @@ PAINTABLE = frozenset((
 SUBTITLE_TILES = tuple(range(0x160, 0x166))    # 「青の天外」 48x8
 SUBTITLE_TEXT = "청의 천외"
 SUBTITLE_GLYPH = 13         # 원본에서 이 색 이상이 글자, 아래는 파란 판
+
+WIDTHS = tuple(range(208, 151, -8))   # 큰 쪽부터 — 처음 통과한 크기를 씁니다
+THRESHOLDS = (112, 128, 144)
+LOSS_OK = 0.05              # 잉크의 5%까지는 잘려도 글자가 읽힙니다
 
 WORDMARK_FRACTION = 0.735   # 로고 그림에서 워드마크가 차지하는 세로 비율
 BODY_ALPHA = 200            # 글자 본체로 볼 알파 (아래는 바깥 번짐)
@@ -296,18 +304,28 @@ def render_wordmark(tiles: bytearray, logo: str) -> dict:
     free = _free_mask()
     body = _wordmark_body(logo)
 
+    # 칠할 수 있는 칸이 듬성듬성해서 무작정 크게 그리면 획이 뜯깁니다.
+    # 손실이 LOSS_OK 이하인 것 중 **가장 큰 크기**를 고릅니다.
     best = None
-    for width in (236, 232, 228):
-        for thr in (112, 120, 128, 136):
+    for width in WIDTHS:
+        cand = None
+        for thr in THRESHOLDS:
             shape = _shape(body, width, thr)
-            if sum(shape[0]) < 1500:
-                continue
-            for dx in range(-8, 9):
-                for dy in range(-4, 5):
+            for dx in range(-6, 7):
+                for dy in range(-12, 13):
                     lost, total, x0, y0 = _lost(shape, free, dx, dy)
+                    if total < 800:
+                        continue
                     score = lost / total
-                    if best is None or score < best[0]:
-                        best = (score, width, thr, dx, dy, lost, total, shape, x0, y0)
+                    if cand is None or score < cand[0]:
+                        cand = (score, width, thr, dx, dy, lost, total, shape, x0, y0)
+        if cand is None:
+            continue
+        if best is None or cand[0] < best[0]:
+            best = cand
+        if cand[0] <= LOSS_OK:
+            best = cand
+            break
     if best is None:
         raise TitleError("로고를 띠에 앉힐 수 없습니다")
     _, width, thr, dx, dy, lost, total, shape, x0, y0 = best
