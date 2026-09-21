@@ -127,7 +127,7 @@ class RomTest(unittest.TestCase):
         kotitle.apply(out, LOGO, FONT)
         after = kotitle.load_tiles(out)
         allowed = (kotitle.PAINTABLE | set(kotitle.SUBTITLE_TILES)
-                   | set(kotitle.MIRROR_TILES))
+                   | set(kotitle.MIRROR_TILES) | set(kotitle.OVERLAY_TILES))
         for t in range(len(before) // 32):
             idx = t + kotitle.TILE_BASE
             if idx in allowed:

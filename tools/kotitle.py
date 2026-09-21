@@ -46,15 +46,19 @@ TILES_LEN = 9577            # 원본 압축 길이 — 이 안에 들어가야 �
 TILE_BASE = 0x20            # 블롭 타일 0 == VRAM 타일 0x20
 
 W, H = 256, 64              # 워드마크 띠 (32타일 x 8줄)
+# 화면에 나오는 맵 행. **18행은 건너뜁니다** — 세로 스크롤을 HBlank 인터럽트가
+# 줄마다 고쳐서 18행이 표시되지 않습니다. 패치하지 않은 ROM 의 타이틀 캡처와
+# 각 맵 행을 화소 단위로 대조해 확정했습니다 (일치 14,888/15,360).
+# 화면 y 0~7 은 17행, y 8~15 가 19행, 그 뒤로 20~25행이 이어집니다.
+BAND_ROWS = (17, 19, 20, 21, 22, 23, 24, 25)
 
 TRANSPARENT, WHITE = 0, 15
 OUTLINE_COLOR = 1           # 오프닝 로고의 흰 테두리 색
 
-# BG2(화면블록 0) 맵 18~25행. 24행에는 원본 글자의 아래쪽이, 25행에는 로고
-# 아래 날개 장식(`0x0D0`~`0x0D7`)이 있어 여기까지 지워야 깨끗합니다. 한 칸은 GBA 타일맵 엔트리(팔레트<<12 | 플립 | 번호).
+# BG2(화면블록 0) 의 워드마크 띠. 행 순서는 `BAND_ROWS` 를 보세요. 한 칸은 GBA 타일맵 엔트리(팔레트<<12 | 플립 | 번호).
 BAND_MAP = (
-    "1420 1040 1041 1042 1043 1004 1005 1006 1047 1008 1009 100A 100B 100C 104D 104E"
-    " 140E 140D 140C 1048 1049 104A 104B 104C 106F 108F 1404 1403 2402 2401 1433 1020",
+    "1433 1020 1021 2022 1023 1024 1025 1026 1027 1028 1029 102A 102B 102C 102D 102E"
+    " 142E 142D 142C 142B 142A 1429 1428 1427 1426 1425 1424 1423 2422 1421 1420 1033",
     "1433 1060 1061 1062 1063 1064 1065 1066 1067 1068 1069 106A 106B 106C 106D 106E"
     " 100F 1010 1011 1012 1013 1014 1015 1016 1017 1018 1019 101A 101B 101C 101D 1033",
     "1420 1080 1081 1082 1083 1084 1085 1086 1087 1088 1089 108A 108B 108C 108D 108E"
@@ -79,19 +83,18 @@ BAND_MAP = (
 #    거의 안 보입니다). 더 조이면 글자 한가운데가 뚫립니다.
 PAINTABLE = frozenset((
     0x02F, 0x030, 0x031, 0x032, 0x034, 0x035, 0x036, 0x037, 0x038, 0x039, 0x03A, 0x03B,
-    0x03C, 0x03D, 0x040, 0x041, 0x042, 0x043, 0x044, 0x045, 0x046, 0x047, 0x048, 0x049,
-    0x04A, 0x04B, 0x04C, 0x04D, 0x04E, 0x04F, 0x051, 0x052, 0x054, 0x055, 0x056, 0x057,
+    0x03C, 0x03D, 0x044, 0x045, 0x046, 0x04F, 0x051, 0x052, 0x054, 0x055, 0x056, 0x057,
     0x058, 0x059, 0x05A, 0x05B, 0x05C, 0x05D, 0x060, 0x061, 0x062, 0x063, 0x064, 0x065,
-    0x066, 0x067, 0x068, 0x069, 0x06A, 0x06B, 0x06C, 0x06D, 0x06E, 0x06F, 0x070, 0x071,
-    0x072, 0x073, 0x074, 0x075, 0x076, 0x077, 0x078, 0x079, 0x07A, 0x07B, 0x07C, 0x07D,
-    0x080, 0x081, 0x082, 0x083, 0x084, 0x085, 0x086, 0x087, 0x088, 0x089, 0x08A, 0x08B,
-    0x08C, 0x08D, 0x08E, 0x08F, 0x090, 0x091, 0x092, 0x093, 0x094, 0x095, 0x096, 0x097,
-    0x098, 0x099, 0x09A, 0x09B, 0x09C, 0x09D, 0x0A0, 0x0A1, 0x0A2, 0x0A3, 0x0A4, 0x0A5,
-    0x0A6, 0x0A7, 0x0A8, 0x0A9, 0x0AA, 0x0AB, 0x0AC, 0x0AD, 0x0AE, 0x0B1, 0x0B2, 0x0B3,
-    0x0B4, 0x0B5, 0x0B6, 0x0C0, 0x0C1, 0x0C2, 0x0C3, 0x0C4, 0x0C5, 0x0C6, 0x0C7, 0x0C8,
-    0x0C9, 0x0CA, 0x0CB, 0x0CC, 0x0CD, 0x0D0, 0x0D1, 0x0D2, 0x0D3, 0x0D4, 0x0D5, 0x0D6,
-    0x0D7, 0x0E0, 0x0E1, 0x0E2, 0x0E3, 0x0E4, 0x0E5, 0x0E6, 0x0E7, 0x0E8, 0x0E9, 0x0EA,
-    0x0EB, 0x0EC, 0x0ED,
+    0x066, 0x067, 0x068, 0x069, 0x06A, 0x06B, 0x06C, 0x06D, 0x06E, 0x070, 0x071, 0x072,
+    0x073, 0x074, 0x075, 0x076, 0x077, 0x078, 0x079, 0x07A, 0x07B, 0x07C, 0x07D, 0x080,
+    0x081, 0x082, 0x083, 0x084, 0x085, 0x086, 0x087, 0x088, 0x089, 0x08A, 0x08B, 0x08C,
+    0x08D, 0x08E, 0x090, 0x091, 0x092, 0x093, 0x094, 0x095, 0x096, 0x097, 0x098, 0x099,
+    0x09A, 0x09B, 0x09C, 0x09D, 0x0A0, 0x0A1, 0x0A2, 0x0A3, 0x0A4, 0x0A5, 0x0A6, 0x0A7,
+    0x0A8, 0x0A9, 0x0AA, 0x0AB, 0x0AC, 0x0AD, 0x0AE, 0x0B1, 0x0B2, 0x0B3, 0x0B4, 0x0B5,
+    0x0B6, 0x0C0, 0x0C1, 0x0C2, 0x0C3, 0x0C4, 0x0C5, 0x0C6, 0x0C7, 0x0C8, 0x0C9, 0x0CA,
+    0x0CB, 0x0CC, 0x0CD, 0x0D0, 0x0D1, 0x0D2, 0x0D3, 0x0D4, 0x0D5, 0x0D6, 0x0D7, 0x0E0,
+    0x0E1, 0x0E2, 0x0E3, 0x0E4, 0x0E5, 0x0E6, 0x0E7, 0x0E8, 0x0E9, 0x0EA, 0x0EB, 0x0EC,
+    0x0ED,
 ))
 
 # 띠 안에서 15열/16열에 좌우 반전으로 **두 번** 나오는 타일. 한쪽에 맞춰
@@ -99,14 +102,19 @@ PAINTABLE = frozenset((
 # 칠합니다. 글자 사이 여백에 작은 대칭 무늬가 하나 남지만 획은 다 살아납니다.
 MIRROR_TILES = (0x0CE, 0x0EE)
 
+# 로고 아래에 남던 사다리꼴 자국. 타일마다 번호를 새긴 실험 롬으로 이 셋임을
+# 확인했습니다 (`0x0B0` 은 BG2 맵 0행 18열, `0x10D` 은 BG3 맵 31행 11열,
+# `0x10E` 은 아예 안 쓰임). 투명하게 비우면 뒤의 돌벽이 비칩니다.
+OVERLAY_TILES = (0x0B0, 0x10D, 0x10E)
+
 SUBTITLE_TILES = tuple(range(0x160, 0x166))    # 「青の天外」 48x8
 SUBTITLE_TEXT = "청의 천외"
 SUBTITLE_GLYPH = 13         # 원본에서 이 색 이상이 글자, 아래는 파란 판
 
-# 칠할 수 있는 칸이 20~23행(32px)에 몰려 있어 원본 비율(4.4:1)대로 키우면
-# 글자 위아래가 잘립니다. 가로로 1.3배쯤 늘여 납작하게 앉힙니다.
-HEIGHTS = (38, 36, 34)
-WIDTHS = tuple(range(224, 195, -4))
+# 칠할 수 있는 칸이 20~23행(32픽셀)에 몰려 있어 원본 비율(4.4:1)대로 키우면
+# 글자 위아래가 잘립니다. 가로로 조금 늘여 납작하게 앉힙니다.
+HEIGHTS = (44, 40, 36, 32)
+WIDTHS = tuple(range(236, 175, -4))
 THRESHOLDS = (144, 156)
 
 WORDMARK_FRACTION = 0.735   # 로고 그림에서 워드마크가 차지하는 세로 비율
@@ -366,7 +374,7 @@ def render_wordmark(tiles: bytearray, logo: str) -> dict:
             for thr in THRESHOLDS:
                 shape = _shape(body, width, height, thr)
                 for dx in range(-4, 5):
-                    for dy in range(-7, 8):
+                    for dy in range(-4, 5):
                         lost, total, x0, y0 = _lost(shape, free, dx, dy)
                         key = (lost, -width * height)
                         if best is None or key < best[0]:
@@ -399,6 +407,13 @@ def render_wordmark(tiles: bytearray, logo: str) -> dict:
     painted += _write_mirrors(tiles, out)
     return {"칠한 타일": painted, "잘린 화소": lost, "글자 화소": total,
             "크기": (width, height), "밀기": (dx, dy)}
+
+
+def clear_overlay(tiles: bytearray) -> int:
+    """로고 위에 덮여 나오던 원본 장식 조각을 투명하게 지웁니다."""
+    for idx in OVERLAY_TILES:
+        set_tile(tiles, idx, bytes(64))
+    return len(OVERLAY_TILES)
 
 
 def render_subtitle(tiles: bytearray, font: str, text: str = SUBTITLE_TEXT) -> dict:
@@ -528,6 +543,7 @@ def build(rom: bytes, logo: str, font: str):
     """(재압축한 타일셋, 통계). ROM 은 건드리지 않습니다."""
     tiles = load_tiles(rom)
     stats = render_wordmark(tiles, logo)
+    stats["지운 장식"] = clear_overlay(tiles)
     stats.update(render_subtitle(tiles, font))
     packed = gbalz.compress(bytes(tiles))
     if len(packed) > TILES_LEN:
@@ -571,7 +587,8 @@ def main() -> int:
           f"칠한 타일 {stats['칠한 타일']}개 · "
           f"잘린 화소 {stats['잘린 화소']}/{stats['글자 화소']} "
           f"({stats['잘린 화소'] / stats['글자 화소'] * 100:.1f}%)")
-    print(f"  부제           「{SUBTITLE_TEXT}」 {stats['부제 화소']}화소")
+    print(f"  부제           「{SUBTITLE_TEXT}」 {stats['부제 화소']}화소 · "
+          f"덮개 장식 {stats['지운 장식']}타일 지움")
     print(f"  타일셋         {stats['압축']:,}바이트 "
           f"(자리 {TILES_LEN:,}, 여유 {stats['여유']:,})")
     print(f"  오프닝 로고    {stats['오프닝 크기'][0]}x{stats['오프닝 크기'][1]} · "
