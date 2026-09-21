@@ -37,7 +37,7 @@ make check          # SHA-1 대조
 | 2. 덤프 | `make script` | `script/ja/` 원문 + `script/ko/` 번역 골격 |
 | 3. 번역 | `script/ko/` 편집 | 아래 형식 참고 |
 | 4. 폰트 | `font/Galmuri14.ttf` 배치 | 한 번만. 저장소에는 포함하지 않습니다 |
-| 5. 삽입 | `make insert` | 글리프·색인·훅 + 번역문 삽입 → `build/patched.gba` |
+| 5. 삽입 | `make insert` | 글리프·색인·훅 + 번역문 + 타이틀 삽입 → `build/patched.gba` |
 | 6. 패치 | `make patch` | `patch/oriental_blue_ko.bps` |
 | 7. 검증 | `make verify` / `make run` | 재적용 대조 · mGBA 실행 |
 | — | `make test` | 단위 + ROM 회귀 테스트 |
@@ -49,6 +49,8 @@ make check          # SHA-1 대조
 3. 출력 훅을 ROM 빈 공간에 놓고, `0x0801C904` 의 `bl` 대상 주소만 바꿉니다.
    기존 코드에서 고치는 것은 이 4바이트뿐입니다.
 4. 번역문을 인코딩해 빈 공간에 쓰고 문자열 테이블 오프셋을 다시 씁니다.
+5. `art/title_ko.png` 와 `font/Galmuri7.ttf` 가 있으면 타이틀 로고와 부제를
+   한글로 다시 그려 원래 자리에 재압축해 넣습니다 (둘 중 하나라도 없으면 건너뜁니다).
 
 **원본 폰트도 문자열 자리도 건드리지 않습니다.** 언제든 부분 번역 상태로
 빌드되고, 번역하지 않은 항목은 일본어 원문 그대로 나옵니다.
