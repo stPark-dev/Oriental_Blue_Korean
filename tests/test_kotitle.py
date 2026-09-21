@@ -43,6 +43,14 @@ class ConstTest(unittest.TestCase):
     def test_부제와_워드마크는_겹치지_않는다(self):
         self.assertFalse(kotitle.PAINTABLE & set(kotitle.SUBTITLE_TILES))
 
+    def test_거울_쌍은_따로_다룬다(self):
+        """거울 쌍은 두 칸이 한 타일을 나눠 쓰므로 보통 칸과 섞으면 안 됩니다."""
+        self.assertFalse(kotitle.PAINTABLE & set(kotitle.MIRROR_TILES))
+        used = [e for row in kotitle.BAND_MAP for e in row.split()]
+        for t in kotitle.MIRROR_TILES:
+            n = sum(1 for e in used if int(e, 16) & 0x3FF == t)
+            self.assertEqual(n, 2, f"0x{t:03X} 는 띠에 두 번 나와야 합니다")
+
 
 class WallTest(unittest.TestCase):
     """벽 복원: 투명(0)·흰색(15)·모르는 칸을 주변 벽 색으로 메웁니다."""
@@ -118,7 +126,8 @@ class RomTest(unittest.TestCase):
         out = bytearray(self.rom)
         kotitle.apply(out, LOGO, FONT)
         after = kotitle.load_tiles(out)
-        allowed = kotitle.PAINTABLE | set(kotitle.SUBTITLE_TILES)
+        allowed = (kotitle.PAINTABLE | set(kotitle.SUBTITLE_TILES)
+                   | set(kotitle.MIRROR_TILES))
         for t in range(len(before) // 32):
             idx = t + kotitle.TILE_BASE
             if idx in allowed:

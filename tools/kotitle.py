@@ -59,9 +59,12 @@ BAND_MAP = (
     " 20B4 10B5 10B6 142B 142A 1409 1408 1407 1406 1405 1404 1403 2402 2401 1433 1020",
 )
 
-# 띠 밖에서 거의 안 쓰이는 타일. 여러 곳에서 쓰는 타일을 고치면 그 자리마다
-# 글자 조각이 찍힙니다. 맵 0~2행 장식 줄에 최대 4번까지만 겹치는 것을 허용해
-# 155칸을 얻었습니다 — 더 조이면 글자 한가운데가 뚫립니다.
+# 띠 안에 **딱 한 번만** 나오고, 띠 밖에서도 거의 안 쓰이는 타일.
+#  - 띠 안에 두 번 나오면(`0x0CE`·`0x0EE` 는 15열/16열 거울 쌍) 한쪽에 맞춰
+#    칠한 순간 다른 쪽이 뒤집힌 조각이 됩니다.
+#  - 띠 밖에서 쓰는 타일을 고치면 그 자리마다 글자 부스러기가 찍힙니다.
+#    맵 0~2행 장식 줄에 4번까지만 겹치는 것은 허용했습니다 (저작권 표기 뒤라
+#    거의 안 보입니다). 더 조이면 글자 한가운데가 뚫립니다.
 PAINTABLE = frozenset((
     0x02F, 0x030, 0x031, 0x032, 0x034, 0x035, 0x036, 0x037, 0x038, 0x039, 0x03A, 0x03B,
     0x03C, 0x03D, 0x040, 0x041, 0x042, 0x043, 0x044, 0x045, 0x046, 0x047, 0x048, 0x049,
@@ -74,9 +77,14 @@ PAINTABLE = frozenset((
     0x098, 0x099, 0x09A, 0x09B, 0x09C, 0x09D, 0x0A0, 0x0A1, 0x0A2, 0x0A3, 0x0A4, 0x0A5,
     0x0A6, 0x0A7, 0x0A8, 0x0A9, 0x0AA, 0x0AB, 0x0AC, 0x0AD, 0x0AE, 0x0B1, 0x0B2, 0x0B3,
     0x0B4, 0x0B5, 0x0B6, 0x0C0, 0x0C1, 0x0C2, 0x0C3, 0x0C4, 0x0C5, 0x0C6, 0x0C7, 0x0C8,
-    0x0C9, 0x0CA, 0x0CB, 0x0CC, 0x0CD, 0x0CE, 0x0E0, 0x0E1, 0x0E2, 0x0E3, 0x0E4, 0x0E5,
-    0x0E6, 0x0E7, 0x0E8, 0x0E9, 0x0EA, 0x0EB, 0x0EC, 0x0ED, 0x0EE,
+    0x0C9, 0x0CA, 0x0CB, 0x0CC, 0x0CD, 0x0E0, 0x0E1, 0x0E2, 0x0E3, 0x0E4, 0x0E5, 0x0E6,
+    0x0E7, 0x0E8, 0x0E9, 0x0EA, 0x0EB, 0x0EC, 0x0ED,
 ))
+
+# 띠 안에서 15열/16열에 좌우 반전으로 **두 번** 나오는 타일. 한쪽에 맞춰
+# 그리면 다른 쪽이 뒤집힌 조각이 되므로, 두 칸이 원하는 그림을 **합쳐서**
+# 칠합니다. 글자 사이 여백에 작은 대칭 무늬가 하나 남지만 획은 다 살아납니다.
+MIRROR_TILES = (0x0CE, 0x0EE)
 
 SUBTITLE_TILES = tuple(range(0x160, 0x166))    # 「青の天外」 48x8
 SUBTITLE_TEXT = "청의 천외"
@@ -285,12 +293,48 @@ def _lost(shape, free: bytes, dx: int, dy: int):
 def _free_mask() -> bytearray:
     free = bytearray(W * H)
     for r, c, idx, _, _ in band_cells():
-        if idx not in PAINTABLE:
+        if idx not in PAINTABLE and idx not in MIRROR_TILES:
             continue
         for y in range(8):
             for x in range(8):
                 free[(r * 8 + y) * W + c * 8 + x] = 1
     return free
+
+
+def _write_cell(tiles: bytearray, canvas: bytes, r: int, c: int,
+                idx: int, hf: int, vf: int) -> None:
+    """띠 그림의 한 칸을 타일로 되돌려 씁니다 (맵의 반전을 되감아서)."""
+    px = bytearray(64)
+    for y in range(8):
+        for x in range(8):
+            sx = 7 - x if hf else x
+            sy = 7 - y if vf else y
+            px[sy * 8 + sx] = canvas[(r * 8 + y) * W + c * 8 + x]
+    set_tile(tiles, idx, px)
+
+
+def _write_mirrors(tiles: bytearray, canvas: bytes) -> int:
+    """거울 쌍 타일: 두 칸이 원하는 그림을 합쳐 한 장으로 씁니다.
+
+    구멍이 우선, 다음이 흰 테두리, 둘 다 아니면 첫 칸의 돌벽을 씁니다.
+    """
+    cells: dict[int, list] = {}
+    for r, c, idx, hf, vf in band_cells():
+        if idx in MIRROR_TILES:
+            cells.setdefault(idx, []).append((r, c, hf, vf))
+    for idx, group in cells.items():
+        px = bytearray(64)
+        for y in range(8):
+            for x in range(8):
+                vals = []
+                for r, c, hf, vf in group:
+                    sx = 7 - x if hf else x
+                    sy = 7 - y if vf else y
+                    vals.append(canvas[(r * 8 + sy) * W + c * 8 + sx])
+                px[y * 8 + x] = (TRANSPARENT if TRANSPARENT in vals
+                                 else WHITE if WHITE in vals else vals[0])
+        set_tile(tiles, idx, px)
+    return sum(len(g) for g in cells.values())
 
 
 def render_wordmark(tiles: bytearray, logo: str) -> dict:
@@ -337,14 +381,9 @@ def render_wordmark(tiles: bytearray, logo: str) -> dict:
     for r, c, idx, hf, vf in band_cells():
         if idx not in PAINTABLE:
             continue
-        px = bytearray(64)
-        for y in range(8):
-            for x in range(8):
-                sx = 7 - x if hf else x
-                sy = 7 - y if vf else y
-                px[sy * 8 + sx] = out[(r * 8 + y) * W + c * 8 + x]
-        set_tile(tiles, idx, px)
+        _write_cell(tiles, out, r, c, idx, hf, vf)
         painted += 1
+    painted += _write_mirrors(tiles, out)
     return {"칠한 타일": painted, "잘린 화소": lost, "글자 화소": total,
             "크기": (width, height), "밀기": (dx, dy)}
 
