@@ -79,6 +79,11 @@ font: ## 한글 글리프 미리보기 -> build/kofont.png
 width: ## 번역문 폭 검사 (창 밖으로 잘리는 줄 찾기)
 	@$(PYTHON) tools/kowidth.py
 
+shiri: ## 끝말잇기 낱말표 검사 (사슬·버퍼)
+	@$(PYTHON) tools/koshiri.py info $(ROM)
+	@echo
+	@$(PYTHON) tools/koshiri.py check $(ROM)
+
 insert: strings ## 번역문 + 한글 폰트 + 타이틀 삽입 -> build/patched.gba
 	@test -f $(FONT) || (echo "한글 TTF 가 없습니다: $(FONT)"; exit 1)
 	@$(PYTHON) tools/inserttext.py $(ROM) $(PATCHED) --ttf $(FONT)
@@ -111,4 +116,4 @@ clean: ## 빌드 산출물 삭제
 	@rm -rf $(BUILD)/*.gba $(BUILD)/*.tsv $(BUILD)/*.png $(BUILD)/*.log
 	@echo "정리 완료"
 
-.PHONY: help hooks test check width scan-ptr scan-text scan-lz tbl tbl-check strings vm grid grid-find script dump font-orig font insert title narr patch build verify run clean
+.PHONY: help hooks test check width shiri scan-ptr scan-text scan-lz tbl tbl-check strings vm grid grid-find script dump font-orig font insert title narr patch build verify run clean
