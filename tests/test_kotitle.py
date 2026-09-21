@@ -25,8 +25,8 @@ FONT = os.path.join(ROOT, "font", "Galmuri7.ttf")
 class ConstTest(unittest.TestCase):
     """상수는 분석 결과입니다 — 서로 어긋나면 안 됩니다."""
 
-    def test_띠_맵은_7행_32열(self):
-        self.assertEqual(len(kotitle.BAND_MAP), 7)
+    def test_띠_맵은_8행_32열(self):
+        self.assertEqual(len(kotitle.BAND_MAP), 8)
         for row in kotitle.BAND_MAP:
             self.assertEqual(len(row.split()), 32)
         self.assertEqual(kotitle.H, len(kotitle.BAND_MAP) * 8)
