@@ -1,0 +1,108 @@
+#!/usr/bin/env python3
+"""번역 진행률.
+
+분모가 틀리면 진행률은 통째로 거짓말이 됩니다. 실제로 두 번 틀렸습니다.
+
+1. `make script` 가 `--min-count 32` 로 돌아 표 423개가 덤프에 없었습니다.
+   16,674항목 기준 83.5% 로 부풀어 있었습니다. (tools/dumpscript.py 에서 수정)
+2. 문턱을 내리고 나니 이번에는 **게임이 쓰지 않는 표**가 분모에 들어와
+   진행률이 반대로 깎였습니다. 그래서 여기서 덜어냅니다.
+
+    python3 tools/koprog.py          # 전체 진행률
+    python3 tools/koprog.py --left   # 남은 표를 많은 순으로
+"""
+from __future__ import annotations
+
+import argparse
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from script_io import ScriptFile  # noqa: E402
+
+# 번역해도 화면에 나오지 않거나, 번역하면 안 되는 **표**.
+#
+# 아이템 이름표 DE1AF8 은 여기 넣으면 안 됩니다. 화면에 나오는 표라
+# 738항목이 이미 번역돼 있어서, 표째로 빼면 그 번역이 분자에서도
+# 사라집니다. 그 표에서 뺄 것은 아래 PLACEHOLDER 자리뿐입니다.
+EXCLUDED: dict[str, str] = {
+    "DFBEE4": "비-JPN 낱말표 — 읽는 코드가 없습니다 (tools/koshiri.py)",
+    "DF9080": "끝말잇기 낱말 조각 — koshiri.py 가 롬을 직접 고칩니다",
+    "DF809C": "ＣＡＳＴ 자막 — 제작진 실명이라 원문을 그대로 둡니다",
+    "DF8494": "ＳＴＡＦＦ 자막 — 제작진 실명이라 원문을 그대로 둡니다",
+}
+
+# 표 안의 빈 자리. 아이템 이름표에서 279개가 이 꼴입니다.
+PLACEHOLDER = "0"
+
+
+def load(ja_dir: str, ko_dir: str) -> dict[str, list[tuple[str, str]]]:
+    """표마다 (원문, 번역) 목록을 모읍니다."""
+    out = {}
+    for name in sorted(os.listdir(ja_dir)):
+        if not name.startswith("t") or not name.endswith(".txt"):
+            continue
+        ja = ScriptFile.read(os.path.join(ja_dir, name))
+        ko_path = os.path.join(ko_dir, name)
+        ko = ({e.index: e.text for e in ScriptFile.read(ko_path).entries}
+              if os.path.exists(ko_path) else {})
+        out[name] = [(e.text, ko.get(e.index, "")) for e in ja.entries]
+    return out
+
+
+def count(files: dict[str, list[tuple[str, str]]]) -> dict[str, tuple[int, int]]:
+    """표마다 (번역 대상, 완료). 빈 원문과 제외 표는 빼고 셉니다."""
+    out = {}
+    for name, pairs in files.items():
+        table = name[1:-4] if name.startswith("t") else name
+        if table in EXCLUDED:
+            continue
+        total = done = 0
+        for ja, ko in pairs:
+            if not ja.strip() or ja.strip() == PLACEHOLDER:
+                continue
+            total += 1
+            if ko.strip():
+                done += 1
+        out[table] = (total, done)
+    return out
+
+
+def totals(rows: dict[str, tuple[int, int]]) -> tuple[int, int]:
+    return (sum(t for t, _ in rows.values()), sum(d for _, d in rows.values()))
+
+
+def percent(done: int, total: int) -> float:
+    return done / total * 100 if total else 0.0
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="번역 진행률")
+    ap.add_argument("--ja", default="script/ja")
+    ap.add_argument("--ko", default="script/ko")
+    ap.add_argument("--left", action="store_true", help="남은 표를 많은 순으로")
+    args = ap.parse_args()
+
+    if not os.path.isdir(args.ja):
+        print(f"[!] 원문이 없습니다: {args.ja} — `make script` 를 먼저 돌리세요")
+        return 1
+    rows = count(load(args.ja, args.ko))
+    total, done = totals(rows)
+    print(f"번역 대상 {total:,}항목 / 완료 {done:,} "
+          f"({percent(done, total):.1f}%) / 남음 {total - done:,}")
+    print(f"표 {len(rows)}개 · 손대지 않은 표 "
+          f"{sum(1 for t, d in rows.values() if d == 0)}개")
+    print("\n분모에서 뺀 표 (그 밖에 각 표의 '0' 빈 자리도 뺍니다):")
+    for name, why in EXCLUDED.items():
+        print(f"  {name}  {why}")
+    if args.left:
+        left = sorted(((t - d, n) for n, (t, d) in rows.items() if t > d),
+                      reverse=True)
+        print(f"\n남은 표 {len(left)}개:")
+        for n, name in left[:40]:
+            print(f"  {name}  {n:5}항목")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

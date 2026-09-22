@@ -79,6 +79,9 @@ font: ## 한글 글리프 미리보기 -> build/kofont.png
 width: ## 번역문 폭 검사 (창 밖으로 잘리는 줄 찾기)
 	@$(PYTHON) tools/kowidth.py
 
+prog: ## 번역 진행률 (LEFT=1 이면 남은 표 목록도)
+	@$(PYTHON) tools/koprog.py $(if $(LEFT),--left)
+
 audit: ## 번역문 전수 감사 (제어 코드·줄 수·printf·조사)
 	@$(PYTHON) tools/koaudit.py
 
@@ -121,4 +124,4 @@ clean: ## 빌드 산출물 삭제
 	@rm -rf $(BUILD)/*.gba $(BUILD)/*.tsv $(BUILD)/*.png $(BUILD)/*.log
 	@echo "정리 완료"
 
-.PHONY: help hooks test check width audit shiri scan-ptr scan-text scan-lz tbl tbl-check strings vm grid grid-find script dump font-orig font insert title narr patch build verify run clean
+.PHONY: help hooks test check width prog audit shiri scan-ptr scan-text scan-lz tbl tbl-check strings vm grid grid-find script dump font-orig font insert title narr patch build verify run clean
