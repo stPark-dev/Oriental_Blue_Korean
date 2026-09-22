@@ -100,6 +100,34 @@ class CountTest(unittest.TestCase):
         self.assertEqual(rows, {})
 
 
+class FormatTest(unittest.TestCase):
+    """가나·한자가 하나도 없으면 옮길 것이 없습니다.
+
+    DF3908 에는 printf 서식과 기호만 든 항목이 수백 개 있습니다.
+    서식은 원문 그대로여야 하고(바꾸면 값이 틀리거나 튕깁니다),
+    기호와 영문 라벨은 옮길 말이 없습니다.
+    """
+
+    def test_서식만_있으면_대상이_아니다(self):
+        for t in ("<$1F>-7dＧ", "<$1F>d／<$1F>d", "<$1F>-3d：<$1F>-02d"):
+            self.assertFalse(koprog.translatable(t), t)
+
+    def test_기호와_영문_라벨도_대상이_아니다(self):
+        for t in ("Ｇ", "＋", "×", "：", "ＥＸＰ", "ＮＥＸＴ", "[", "%"):
+            self.assertFalse(koprog.translatable(t), t)
+
+    def test_가나나_한자가_있으면_대상이다(self):
+        for t in ("はい", "天帝", "<$1F>dコ", "バングル"):
+            self.assertTrue(koprog.translatable(t), t)
+
+    def test_서식을_낀_본문도_대상이다(self):
+        self.assertTrue(koprog.translatable("<$1F>dかい\u3000こうげき"))
+
+    def test_세지_않는다(self):
+        rows = koprog.count({"tAAA111.txt": [("Ｇ", ""), ("はい", "예")]})
+        self.assertEqual(rows["AAA111"], (1, 1))
+
+
 class TotalTest(unittest.TestCase):
     def test_합계는_표별_합과_같다(self):
         rows = {"A": (10, 4), "B": (5, 5)}

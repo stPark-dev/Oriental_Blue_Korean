@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -51,6 +52,24 @@ EXCLUDED: dict[str, str] = {
     "B185B0": "글이 아닌 자리 — 같은 기호열 4벌",
 }
 
+# 제어 코드와 printf 서식. 서식은 원문 그대로여야 합니다 — 바꾸면
+# 엉뚱한 값이 찍히거나 튕깁니다 (tools/koaudit.py 가 따로 검사합니다).
+TAG_RE = re.compile(r"<\$[0-9A-F]{2,4}>|<F\d:[0-9A-F]{2}>")
+FMT_RE = re.compile(r"<\$1F>[-+ #0-9.]*[a-zA-Z]")
+JP_RE = re.compile(r"[\u3040-\u30ff\u4e00-\u9fff]")
+
+
+def translatable(text: str) -> bool:
+    """옮길 말이 들어 있는지.
+
+    서식과 제어 코드를 걷어내고도 가나·한자가 남아야 번역 대상입니다.
+    DF3908 에는 `<$1F>-7dＧ` 같은 서식과 `Ｇ` `×` `ＥＸＰ` 같은 기호·
+    영문 라벨만 든 항목이 313개 있습니다. 옮길 말이 없습니다.
+    """
+    rest = TAG_RE.sub("", FMT_RE.sub("", text))
+    return bool(JP_RE.search(rest))
+
+
 # 표 안의 빈 자리. 아이템 이름표에서 279개, CA8DE0 에서 17개가 이 꼴입니다.
 # 반각 '0' 과 전각 '０' 둘 다 씁니다.
 PLACEHOLDERS = frozenset(("0", "\uff10"))
@@ -80,6 +99,8 @@ def count(files: dict[str, list[tuple[str, str]]]) -> dict[str, tuple[int, int]]
         total = done = 0
         for ja, ko in pairs:
             if not ja.strip() or ja.strip() in PLACEHOLDERS:
+                continue
+            if not translatable(ja):
                 continue
             total += 1
             if ko.strip():
