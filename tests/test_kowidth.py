@@ -92,5 +92,32 @@ class HardLimitTest(unittest.TestCase):
         self.assertEqual(kowidth.too_wide("あ", "가" * 14, 26), [(0, 28)])
 
 
+class TableLimitTest(unittest.TestCase):
+    """창 폭은 표마다 다릅니다 — 필드 대사 20칸, 메뉴·기록 28칸."""
+
+    def test_필드_대사_표는_20칸(self):
+        for name in ("tE00000.txt", "tE27024.txt", "tF7BDFC.txt"):
+            self.assertEqual(kowidth.table_limit(name), kowidth.FIELD_CELLS)
+
+    def test_메뉴_기록_표는_더_넓다(self):
+        for name in ("tDDE1E4.txt", "tDE1AF8.txt", "tDEC698.txt"):
+            self.assertEqual(kowidth.table_limit(name), kowidth.MENU_CELLS)
+
+    def test_경로가_붙어도_이름만_본다(self):
+        self.assertEqual(kowidth.table_limit(os.path.join("script", "ko",
+                                                          "tE27024.txt")),
+                         kowidth.FIELD_CELLS)
+
+    def test_이름이_표_주소가_아니면_넓은_쪽으로_봐준다(self):
+        self.assertEqual(kowidth.table_limit("README.txt"), kowidth.MENU_CELLS)
+
+    def test_대사_한_줄은_한글_열_자까지(self):
+        # 20칸 = 한글 10자. 열한 자면 넘칩니다.
+        self.assertEqual(kowidth.too_wide("あ", "가" * 10,
+                                          kowidth.FIELD_CELLS), [])
+        self.assertEqual(kowidth.too_wide("あ", "가" * 11,
+                                          kowidth.FIELD_CELLS), [(0, 22)])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -3,7 +3,8 @@
 
 번역하면서 매번 손이 가는 일이 셋입니다.
 
-  1. 이 줄에 한글 몇 자가 들어가나 — 26칸 한도, 한글은 한 자에 2칸
+  1. 이 줄에 한글 몇 자가 들어가나 — 창 폭은 표마다 다릅니다
+     (필드 대사 20칸 · 메뉴/기록 28칸). 한글은 한 자에 2칸.
   2. 이 문장에 든 아이템 이름을 뭐라고 옮기기로 했더라
   3. 앞뒤 대사가 뭐였나 — 말투를 맞추려면 필요합니다
 
@@ -27,7 +28,7 @@ import koprog  # noqa: E402
 import kowidth  # noqa: E402
 from script_io import ScriptFile  # noqa: E402
 
-LIMIT = 26                       # 메시지 창 폭 (8픽셀 칸)
+# 창 폭은 kowidth 가 표 주소로 정합니다 (필드 대사 20칸 · 메뉴/기록 28칸).
 TAG_RE = re.compile(r"<\$[0-9A-Fa-f]{2,4}>|<F\d:[0-9A-Fa-f]{2}>")
 JP_RE = re.compile(r"[぀-ヿ一-鿿]")
 OUT_DIR = "build/sheet"
@@ -45,7 +46,7 @@ NOTES = {
 }
 
 
-def budget(line: str) -> int:
+def budget(line: str, limit: int) -> int:
     """이 줄에 들어가는 한글 글자 수.
 
     가나·한자는 한글이 됩니다 (한 자에 2칸). 나머지 기호·공백·숫자는
@@ -53,7 +54,7 @@ def budget(line: str) -> int:
     """
     kept = TAG_RE.sub("", line)                       # 제어 코드는 0칸
     kept = "".join(c for c in kept if not JP_RE.match(c))
-    return max(0, (LIMIT - kowidth.cells(kept)) // 2)
+    return max(0, (limit - kowidth.cells(kept)) // 2)
 
 
 def show_width(text: str) -> int:
@@ -100,6 +101,7 @@ class Entry:
 
 def collect(table: str, ja_dir: str, ko_dir: str,
             gloss: dict[str, str]) -> list[Entry]:
+    limit = kowidth.table_limit(f"t{table}.txt")
     ja = ScriptFile.read(os.path.join(ja_dir, f"t{table}.txt"))
     ko_path = os.path.join(ko_dir, f"t{table}.txt")
     ko = ({e.index: e.text for e in ScriptFile.read(ko_path).entries}
@@ -112,17 +114,19 @@ def collect(table: str, ja_dir: str, ko_dir: str,
             continue
         before, after = neighbours(ko, e.index)
         out.append(Entry(e.index, e.text,
-                         [budget(l) for l in e.text.split("\n")],
+                         [budget(l, limit) for l in e.text.split("\n")],
                          terms(e.text, gloss), before, after))
     return out
 
 
 def render(table: str, entries: list[Entry]) -> str:
+    limit = kowidth.table_limit(f"t{table}.txt")
     lines = [f"# {table} — 남은 {len(entries)}항목", ""]
     if table in NOTES:
         lines += ["> ⚠️ " + NOTES[table], ""]
     lines += ["각 줄 오른쪽 숫자가 **한글 최대 글자 수**입니다 "
-              f"(창 폭 {LIMIT}칸, 한글 한 자 = 2칸).", ""]
+              f"(창 폭 {limit}칸, 한글 한 자 = 2칸).",
+              "넘기면 음절이 반으로 찢어져 뒤 내용까지 밀립니다.", ""]
     for e in entries:
         lines.append(f"## {e.index:04d}")
         if e.before:
