@@ -5,51 +5,80 @@
 
 ## 0001 @0xECD9C8
 
+
 ## 0002 @0xECDA0C
+
 
 ## 0003 @0xECDA21
 
+
 ## 0004 @0xECDA30
+
 
 ## 0005 @0xECDA7D
 
+
 ## 0006 @0xECDA93
+
 
 ## 0007 @0xECDA9B
 
+
 ## 0008 @0xECDAB4
+고맙네
+또　언제든　오시게
 
 ## 0009 @0xECDAC7
 
+
 ## 0010 @0xECDACE
+
 
 ## 0011 @0xECDB40
 
+
 ## 0012 @0xECDB9B
+
 
 ## 0013 @0xECDBE1
 
+
 ## 0014 @0xECDC0B
+
 
 ## 0015 @0xECDC14
 
+
 ## 0016 @0xECDC1D
+
 
 ## 0017 @0xECDC32
 
+
 ## 0018 @0xECDC3E
 
+
 ## 0019 @0xECDC47
+여긴　보관소다　이용하겠나？
+<$1A>
 
 ## 0020 @0xECDC54
+고맙네
+또　언제든　오시게
 
 ## 0021 @0xECDC5A
+그런가
+또　언제든　오시게
 
 ## 0022 @0xECDC60
 
+
 ## 0023 @0xECDCAA
+
 
 ## 0024 @0xECDD50
 
+
 ## 0025 @0xECDD89
+
 
