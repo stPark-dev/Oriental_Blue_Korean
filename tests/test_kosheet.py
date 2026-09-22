@@ -96,6 +96,15 @@ class RenderTest(unittest.TestCase):
         out = kosheet.render("A", [kosheet.Entry(1, "あ", [13], [], "", "")])
         self.assertIn("13", out)
 
+    def test_주의가_필요한_표는_경고를_띄운다(self):
+        """DF3908 은 남은 항목이 대사가 아니라 이름 입력 문자판입니다."""
+        out = kosheet.render("DF3908", [kosheet.Entry(1, "あ", [13], [], "", "")])
+        self.assertIn("번역 대상이 아닙니다", out)
+
+    def test_보통_표에는_경고가_없다(self):
+        out = kosheet.render("F2F2FC", [kosheet.Entry(1, "あ", [13], [], "", "")])
+        self.assertNotIn("⚠️", out)
+
     def test_용어가_표시된다(self):
         out = kosheet.render("A", [
             kosheet.Entry(1, "ひかりのゲート", [13],

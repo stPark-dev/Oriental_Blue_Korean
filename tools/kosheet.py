@@ -32,6 +32,18 @@ TAG_RE = re.compile(r"<\$[0-9A-Fa-f]{2,4}>|<F\d:[0-9A-Fa-f]{2}>")
 JP_RE = re.compile(r"[぀-ヿ一-鿿]")
 OUT_DIR = "build/sheet"
 
+# 표 전체를 빼지는 않지만 주의가 필요한 곳. 시트 맨 위에 띄웁니다.
+NOTES = {
+    "DF3908": (
+        "**남은 항목 대부분은 번역 대상이 아닙니다.** 대사가 아니라 "
+        "이름 입력 화면의 가나 문자판(`あいうえお…`)과 구분선(`ーーーー`)"
+        "입니다. 실제 문자 선택 그리드는 롬 `0x08ADEC`·`0x08B142` 의 "
+        "Shift-JIS 이진 표라 문자열표와 별개이고, 한글 이름 입력으로 "
+        "바꾸는 것은 그리드 재작성과 이름 버퍼 처리가 필요한 **역공학 "
+        "과제**입니다. docs/HANDOFF.md 참고."
+    ),
+}
+
 
 def budget(line: str) -> int:
     """이 줄에 들어가는 한글 글자 수.
@@ -106,9 +118,11 @@ def collect(table: str, ja_dir: str, ko_dir: str,
 
 
 def render(table: str, entries: list[Entry]) -> str:
-    lines = [f"# {table} — 남은 {len(entries)}항목", "",
-             "각 줄 오른쪽 숫자가 **한글 최대 글자 수**입니다 "
-             f"(창 폭 {LIMIT}칸, 한글 한 자 = 2칸).", ""]
+    lines = [f"# {table} — 남은 {len(entries)}항목", ""]
+    if table in NOTES:
+        lines += ["> ⚠️ " + NOTES[table], ""]
+    lines += ["각 줄 오른쪽 숫자가 **한글 최대 글자 수**입니다 "
+              f"(창 폭 {LIMIT}칸, 한글 한 자 = 2칸).", ""]
     for e in entries:
         lines.append(f"## {e.index:04d}")
         if e.before:
