@@ -23,6 +23,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import kocode  # noqa: E402
+import koflow  # noqa: E402
 from script_io import ScriptFile  # noqa: E402
 
 TAG_RE = re.compile(r"<\$([0-9A-Fa-f]{2,3})>")
@@ -100,28 +101,33 @@ def main() -> int:
     ap.add_argument("--ja", default="script/ja")
     ap.add_argument("--ko", default="script/ko")
     ap.add_argument("--limit", type=int, default=30, help="출력할 최대 건수")
-    ap.add_argument("--max-cells", type=int, default=26,
-                    help="한 줄 절대 한계 (기본 26칸 = 208픽셀)")
+    ap.add_argument("--max-cells", type=int, default=0,
+                    help="한 줄 절대 한계. 0 이면 표마다 원문이 실제로 쓴 "
+                         "가장 넓은 줄을 한계로 씁니다 (본문 표는 대개 20칸).")
     args = ap.parse_args()
 
     total = over = 0
     shown = 0
-    hard: list[tuple[str, int, int, str]] = []
+    hard: list[tuple[str, int, int, str, int]] = []
     for path in sorted(glob.glob(os.path.join(args.ko, "*.txt"))):
         name = os.path.basename(path)
         ja_path = os.path.join(args.ja, name)
         if not os.path.exists(ja_path):
             continue
-        ja = {e.index: e.text for e in ScriptFile.read(ja_path).entries}
+        ja_entries = ScriptFile.read(ja_path).entries
+        ja = {e.index: e.text for e in ja_entries}
+        # 원문은 그 창에 맞춰 쓰였습니다. 원문이 쓴 가장 넓은 줄이 곧 창 폭입니다.
+        limit = args.max_cells or koflow.table_limit([e.text for e in ja_entries])
+        if not limit:
+            continue
         for e in ScriptFile.read(path).entries:
             if not e.text.strip():
                 continue
             total += 1
             if not is_index_data(e.text):
                 lines = e.text.split("\n")
-                for ln, w in too_wide(ja.get(e.index, ""), e.text,
-                                      args.max_cells):
-                    hard.append((name, e.index, w, lines[ln]))
+                for ln, w in too_wide(ja.get(e.index, ""), e.text, limit):
+                    hard.append((name, e.index, w, lines[ln], limit))
             bad = check(ja.get(e.index, ""), e.text)
             if not bad:
                 continue
@@ -139,11 +145,14 @@ def main() -> int:
     print("  (원문 폭은 참고값입니다. 실제 한계는 메시지 창 폭입니다.)")
 
     if hard:
-        print(f"\n[!] {args.max_cells}칸을 넘겨 확실히 잘리는 줄 {len(hard)}개")
-        for name, idx, w, line in sorted(hard, key=lambda x: -x[2]):
-            print(f"  {w}칸  {name} #{idx:04d}  {line}")
+        print(f"\n[!] 창 폭을 넘겨 확실히 잘리는 줄 {len(hard):,}개")
+        print("    `python3 tools/koflow.py` 로 줄바꿈만 옮겨 고칠 수 있는지 보세요.")
+        for name, idx, w, line, lim in sorted(hard, key=lambda x: x[4] - x[2])[:args.limit]:
+            print(f"  {w}칸 > {lim}칸  {name} #{idx:04d}  {line}")
+        if len(hard) > args.limit:
+            print(f"  ... 외 {len(hard) - args.limit:,}줄")
     else:
-        print(f"\n{args.max_cells}칸을 넘기는 줄 없음 "
+        print("\n창 폭을 넘기는 줄 없음 "
               "(`이름／읽기` 색인 데이터는 검사에서 뺍니다)")
     return 1 if hard else 0
 
