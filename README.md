@@ -182,7 +182,8 @@ make            # 전체 타깃 목록
 | `tools/kofont.py` | 음절 글리프 · 색인 테이블 생성 |
 | `tools/thumb.py` | 최소 THUMB 어셈블러 |
 | `tools/kohook.py` | 한글 출력 훅 (THUMB) |
-| `tools/kowidth.py` | 번역문 폭 검사 (잘림 방지) |
+| `tools/kowidth.py` | 번역문 폭 검사 (대사창 20칸 · 메뉴 28칸) |
+| `tools/kofit.py` | 창 폭을 넘긴 줄 목록·일괄 교체 (안전 검사 포함) |
 | `tools/koaudit.py` | 제어 코드·줄 수·printf·조사 전수 감사 |
 | `tools/kotitle.py` | 타이틀 로고·부제 · 오프닝 영문 로고 한글화 |
 | `tools/konarr.py` | 오프닝 나레이션 한글화 (스프라이트 글리프) |
