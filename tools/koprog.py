@@ -39,10 +39,21 @@ EXCLUDED: dict[str, str] = {
     "DFFE9C": "개발용 장면 라벨 — 제어 코드가 없습니다",
     "E011C8": "개발용 장면 라벨 — 제어 코드가 없습니다",
     "E0255C": "개발용 장면 라벨 — 제어 코드가 없습니다",
+    # 표가 아닌 자리. 덤프 필터를 통과했지만 내용이 글이 아닙니다.
+    # 눈으로 하나씩 확인했습니다. 자동으로 가르려 들면 F62D1C 처럼
+    # 세 항목이 똑같은 멀쩡한 대사를 잘못 버립니다.
+    "4670DC": "글이 아닌 자리 — 같은 기호열 4벌",
+    "467F9C": "글이 아닌 자리 — 같은 기호열 4벌",
+    "89094C": "글이 아닌 자리 — 한두 글자짜리 잡음",
+    "8A42C4": "글이 아닌 자리 — 한두 글자짜리 잡음",
+    "8C0148": "글이 아닌 자리 — 같은 기호열 반복",
+    "9B3F14": "글이 아닌 자리 — 한두 글자짜리 잡음",
+    "B185B0": "글이 아닌 자리 — 같은 기호열 4벌",
 }
 
-# 표 안의 빈 자리. 아이템 이름표에서 279개가 이 꼴입니다.
-PLACEHOLDER = "0"
+# 표 안의 빈 자리. 아이템 이름표에서 279개, CA8DE0 에서 17개가 이 꼴입니다.
+# 반각 '0' 과 전각 '０' 둘 다 씁니다.
+PLACEHOLDERS = frozenset(("0", "\uff10"))
 
 
 def load(ja_dir: str, ko_dir: str) -> dict[str, list[tuple[str, str]]]:
@@ -68,7 +79,7 @@ def count(files: dict[str, list[tuple[str, str]]]) -> dict[str, tuple[int, int]]
             continue
         total = done = 0
         for ja, ko in pairs:
-            if not ja.strip() or ja.strip() == PLACEHOLDER:
+            if not ja.strip() or ja.strip() in PLACEHOLDERS:
                 continue
             total += 1
             if ko.strip():

@@ -13,6 +13,10 @@
   DFEB94 · DFED60 · DFF16C · DFFE9C · E011C8 · E0255C
           개발용 장면 라벨 ("E074 ニンジャ船にのる" 꼴). 457항목이
           제어 코드를 하나도 쓰지 않습니다 — 표시되는 표는 모두 씁니다.
+  4670DC · 467F9C · 89094C · 8A42C4 · 8C0148 · 9B3F14 · B185B0
+          표가 아닌 자리. 덤프 필터를 통과했지만 내용이 글이 아닙니다.
+          눈으로 하나씩 확인했습니다 — 자동 판정에 맡기면 F62D1C
+          (세 항목이 똑같은 진짜 대사) 같은 것을 잘못 버립니다.
 
 DE1AF8 은 **표째로 빼면 안 됩니다.** 화면에 나오는 아이템 이름표라
 738항목이 이미 번역돼 있습니다. 빼야 할 것은 그 안의 '0' 자리뿐입니다.
@@ -45,6 +49,15 @@ class ExcludeTest(unittest.TestCase):
         for name in ("DF809C", "DF8494"):
             self.assertIn(name, koprog.EXCLUDED)
 
+    def test_글이_아닌_자리도_제외한다(self):
+        for name in ("4670DC", "467F9C", "89094C", "8A42C4",
+                     "8C0148", "9B3F14", "B185B0"):
+            self.assertIn(name, koprog.EXCLUDED)
+
+    def test_항목이_다_같아도_진짜_대사는_남긴다(self):
+        """tF62D1C 는 세 항목이 똑같지만 멀쩡한 대사입니다."""
+        self.assertNotIn("F62D1C", koprog.EXCLUDED)
+
     def test_개발용_장면_라벨도_제외한다(self):
         for name in ("DFEB94", "DFED60", "DFF16C",
                      "DFFE9C", "E011C8", "E0255C"):
@@ -68,6 +81,11 @@ class CountTest(unittest.TestCase):
         """아이템 이름표의 빈 자리입니다. 화면에 나오지 않습니다."""
         rows = koprog.count({"tDE1AF8.txt": [("0", ""), ("0", ""), ("かぶと", "투구")]})
         self.assertEqual(rows["DE1AF8"], (1, 1))
+
+    def test_전각_０_자리도_세지_않는다(self):
+        """tCA8DE0 은 17항목이 전부 전각 '０' 입니다."""
+        rows = koprog.count({"tCA8DE0.txt": [("\uff10", ""), ("\uff10", "")]})
+        self.assertEqual(rows["CA8DE0"], (0, 0))
 
     def test_０_자리는_어느_표에서나_뺀다(self):
         rows = koprog.count({"tAAA111.txt": [("0", ""), ("あ", "가")]})
