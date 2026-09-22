@@ -178,6 +178,7 @@ make            # 전체 타깃 목록
 | `tools/kosyl.py` | 음절 분해 · 코드 쌍 인코딩 |
 | `tools/kocode.py` | 문자 코드 공간 모델 |
 | `tools/koenc.py` | 번역문 → 게임 바이트열 |
+| `tools/kolz.py` | 삽입 문자열을 게임 LZ 형식으로 압축 (ROM 용량 확보) |
 | `tools/kofont.py` | 음절 글리프 · 색인 테이블 생성 |
 | `tools/thumb.py` | 최소 THUMB 어셈블러 |
 | `tools/kohook.py` | 한글 출력 훅 (THUMB) |
