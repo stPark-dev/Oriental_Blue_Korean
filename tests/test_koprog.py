@@ -5,7 +5,7 @@
 때문에 표 423개가 덤프에서 빠져 83.5% 로 부풀어 있었습니다. 이번에는
 **게임이 쓰지 않는 표**가 분모에 들어가 반대로 깎이고 있었습니다.
 
-제외 대상은 넷입니다.
+제외 대상은 다음과 같습니다.
 
   DFBEE4  비-JPN 낱말표 — 읽는 코드가 없습니다 (tools/koshiri.py 참고)
   DF9080  끝말잇기 낱말 조각 — koshiri.py 가 롬을 직접 고칩니다
@@ -17,6 +17,10 @@
           표가 아닌 자리. 덤프 필터를 통과했지만 내용이 글이 아닙니다.
           눈으로 하나씩 확인했습니다 — 자동 판정에 맡기면 F62D1C
           (세 항목이 똑같은 진짜 대사) 같은 것을 잘못 버립니다.
+  220020 · 26CAC8 · CAE740 · D7DE5C · DAAA70 · DAAB68 · E02DA4 ·
+  E3DC5C · E5A3D0 · E7E6E0 · E9D308 · EBEB48 · EE8E58 · EF54D0 ·
+  F0C118 · F2E98C
+          크기 접두 바이너리 블롭. 문자열표가 아닙니다.
 
 DE1AF8 은 **표째로 빼면 안 됩니다.** 화면에 나오는 아이템 이름표라
 738항목이 이미 번역돼 있습니다. 빼야 할 것은 그 안의 '0' 자리뿐입니다.
@@ -52,6 +56,13 @@ class ExcludeTest(unittest.TestCase):
     def test_글이_아닌_자리도_제외한다(self):
         for name in ("4670DC", "467F9C", "89094C", "8A42C4",
                      "8C0148", "9B3F14", "B185B0"):
+            self.assertIn(name, koprog.EXCLUDED)
+
+    def test_바이너리_블롭_표도_제외한다(self):
+        for name in ("220020", "26CAC8", "CAE740", "D7DE5C",
+                     "DAAA70", "DAAB68", "E02DA4", "E3DC5C",
+                     "E5A3D0", "E7E6E0", "E9D308", "EBEB48",
+                     "EE8E58", "EF54D0", "F0C118", "F2E98C"):
             self.assertIn(name, koprog.EXCLUDED)
 
     def test_항목이_다_같아도_진짜_대사는_남긴다(self):
