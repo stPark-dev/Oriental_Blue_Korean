@@ -28,6 +28,7 @@ import common  # noqa: E402
 import koenc  # noqa: E402
 import kofont  # noqa: E402
 import kohook  # noqa: E402
+import kolz  # noqa: E402
 import kosyl  # noqa: E402
 import mktbl  # noqa: E402
 import obtext  # noqa: E402
@@ -316,6 +317,9 @@ def build_patch(rom: bytearray, ko_dir: str, tables: list[int],
                 data = koenc.encode(text, ko_map, ja_rev)
             except koenc.EncodeError as e:
                 raise InsertError(f"테이블 0x{base:06X} #{idx}: {e}") from e
+            # 게임은 읽을 때마다 전개하므로 눌러 넣습니다. 누르지 않으면
+            # ROM 이 모자랍니다 (한글은 음절당 코드 두 개).
+            data = kolz.compress_checked(data)
             off = arena.alloc(len(data), align=1)
             rom[off:off + len(data)] = data
             common.w32(rom, base + idx * 4, (off - base) & 0xFFFFFFFF)
