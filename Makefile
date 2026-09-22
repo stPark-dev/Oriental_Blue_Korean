@@ -85,6 +85,9 @@ prog: ## 번역 진행률 (LEFT=1 이면 남은 표 목록도)
 gloss: ## 아이템 이름 표기 일관성 검사
 	@$(PYTHON) tools/kogloss.py
 
+sheet: ## 번역 작업 시트 -> build/sheet/ (TABLE=F2F2FC 로 하나만)
+	@$(PYTHON) tools/kosheet.py $(TABLE)
+
 same: ## 같은 원문의 기존 번역 전파 (WRITE=1 이면 실제로 채움)
 	@$(PYTHON) tools/kosame.py $(if $(WRITE),--write)
 
@@ -130,4 +133,4 @@ clean: ## 빌드 산출물 삭제
 	@rm -rf $(BUILD)/*.gba $(BUILD)/*.tsv $(BUILD)/*.png $(BUILD)/*.log
 	@echo "정리 완료"
 
-.PHONY: help hooks test check width prog gloss same audit shiri scan-ptr scan-text scan-lz tbl tbl-check strings vm grid grid-find script dump font-orig font insert title narr patch build verify run clean
+.PHONY: help hooks test check width prog gloss same sheet audit shiri scan-ptr scan-text scan-lz tbl tbl-check strings vm grid grid-find script dump font-orig font insert title narr patch build verify run clean
