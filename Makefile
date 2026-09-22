@@ -11,6 +11,9 @@ FONT    ?= font/Galmuri14.ttf
 FONT8   ?= font/Galmuri7.ttf
 LOGO    ?= art/title_ko.png
 SHA1    ?= 414cad1aee67ab20f3c133f0259da7e8c3073bbc
+# 원본 빈 공간이 모자라면 ROM 을 여기까지 늘립니다 (GBA 최대 32MB).
+# 안 쓴 뒤쪽은 도로 잘라내므로 실제 크기는 필요한 만큼만 커집니다.
+ROMMAX  ?= 0x2000000
 
 .DEFAULT_GOAL := help
 
@@ -102,7 +105,7 @@ shiri: ## 끝말잇기 낱말표 검사 (사슬·버퍼)
 insert: strings ## 번역문 + 한글 폰트 + 타이틀 삽입 -> build/patched.gba
 	@test -f $(FONT) || (echo "한글 TTF 가 없습니다: $(FONT)"; exit 1)
 	@$(PYTHON) tools/inserttext.py $(ROM) $(PATCHED) --ttf $(FONT) \
-		$$(test -f $(FONT8) && echo --ttf8 $(FONT8))
+		--expand $(ROMMAX) $$(test -f $(FONT8) && echo --ttf8 $(FONT8))
 	@if test -f $(LOGO) && test -f $(FONT8); then \
 		$(PYTHON) tools/kotitle.py $(PATCHED) --logo $(LOGO) --font $(FONT8); \
 	else \
@@ -120,7 +123,7 @@ narr: ## 오프닝 나레이션만 다시 만들기 (build/patched.gba 필요)
 patch: insert ## 배포용 BPS 패치 생성
 	@$(PYTHON) tools/patch.py make $(ROM) $(PATCHED) $(PATCH)
 
-build: check insert patch ## 전체 빌드
+build: check insert patch verify ## 전체 빌드 (패치 검증까지)
 
 verify: ## 생성된 패치를 원본에 적용해 검증
 	@$(PYTHON) tools/patch.py apply $(ROM) $(PATCH) $(BUILD)/verify.gba

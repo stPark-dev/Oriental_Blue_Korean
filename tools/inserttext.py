@@ -42,12 +42,19 @@ class InsertError(Exception):
 class Arena:
     """0xFF 로 채워진 자유 공간 할당기."""
 
-    def __init__(self, rom: bytearray, regions: list[tuple[int, int]]):
+    def __init__(self, rom: bytearray, regions: list[tuple[int, int]],
+                 spill: list[tuple[int, int]] | None = None):
         self.rom = rom
         # 뒤쪽 구간부터 씁니다. 문자열 테이블과 아카이브가 ROM 앞쪽에 몰려
         # 있어서, 뒤에 두면 상대 오프셋이 양수로 나옵니다.
-        self.regions = [list(r) for r in sorted(regions, reverse=True)]
+        self.base = [list(r) for r in sorted(regions, reverse=True)]
+        # 확장으로 늘린 구간은 맨 뒤로 미룹니다. 원본 빈 자리를 먼저 다 써야
+        # ROM 이 필요 이상으로 커지지 않습니다.
+        self.spill = [list(r) for r in sorted(spill or [], reverse=True)]
+        self.regions = self.base + self.spill
+        self.spill0 = [list(r) for r in self.spill]     # 쓴 양을 재려고 원본 보관
         self.used = 0
+        self.top = 0        # 가장 뒤까지 쓴 끝 (ROM 을 어디까지 남길지)
 
     def alloc(self, size: int, align: int = 4, near: int | None = None,
               reach: int = 1 << 21) -> int:
@@ -61,6 +68,7 @@ class Arena:
                 continue
             reg[0] = start + size
             self.used += size
+            self.top = max(self.top, start + size)
             return start
         raise InsertError(f"자유 공간 부족: {size:,}바이트를 넣을 곳이 없습니다"
                           + (f" (0x{near:08X} 에서 bl 사거리 안)"
@@ -68,7 +76,36 @@ class Arena:
 
     @property
     def remaining(self) -> int:
-        return sum(r[1] - r[0] for r in self.regions)
+        """원본 ROM 에 남은 자유 공간. 확장분은 빼고 셉니다 — 이 숫자가
+        0 에 가까워지는 것이 ROM 이 커지기 시작한다는 신호입니다."""
+        return sum(max(0, r[1] - r[0]) for r in self.base)
+
+    @property
+    def spilled(self) -> int:
+        """확장 구간에서 실제로 쓴 바이트."""
+        return sum(max(0, r[0] - s[0]) for r, s in zip(self.spill, self.spill0))
+
+
+GBA_MAX = 0x2000000      # 카트리지 주소 공간 0x08000000-0x09FFFFFF (32MB)
+HOOK_SIZE = 256          # 훅 하나에 잡아 두는 자리
+TRIM_ALIGN = 0x10000     # 잘라낸 ROM 크기를 맞출 경계 (64KB)
+
+
+def expand_rom(rom: bytearray, size: int, fill: int = 0xFF) -> bytearray:
+    """ROM 뒤를 `fill` 로 `size` 바이트까지 늘립니다. 이미 크면 그대로."""
+    if size > GBA_MAX:
+        raise InsertError(f"GBA ROM 은 {GBA_MAX:,}바이트를 넘을 수 없습니다")
+    if len(rom) < size:
+        rom.extend(bytes([fill]) * (size - len(rom)))
+    return rom
+
+
+def trim_rom(rom: bytearray, keep: int, align: int = TRIM_ALIGN) -> bytearray:
+    """`keep` 까지만 남기고 잘라냅니다 (경계로 올림). 늘리지는 않습니다."""
+    if keep <= 0:
+        raise InsertError("잘라낼 기준이 0 이하입니다 (ROM 이 통째로 지워집니다)")
+    want = keep + ((-keep) % align)
+    return rom if want >= len(rom) else rom[:want]
 
 
 def auto_regions(rom: bytes, fill: int = 0xFF,
@@ -216,8 +253,8 @@ def syllable_codes(text: str) -> dict[str, tuple[int, int]]:
 
 def build_patch(rom: bytearray, ko_dir: str, tables: list[int],
                 ttf: str, size: int, top: int,
-                ttf8: str | None = None, size8: int = 8, top8: int = 0
-                ) -> tuple[bytearray, dict]:
+                ttf8: str | None = None, size8: int = 8, top8: int = 0,
+                expand: int = 0) -> tuple[bytearray, dict]:
     """번역문·글리프·훅을 넣은 ROM과 통계를 돌려줍니다."""
     translated = read_translations(ko_dir, tables)
     if not translated:
@@ -233,13 +270,21 @@ def build_patch(rom: bytearray, ko_dir: str, tables: list[int],
     glyphs8 = kofont.build_small_glyphs(ttf8 or ttf, ko_map, size8, top8)
 
     # 번역으로 쓸모없어진 원문 문자열 자리도 자유 공간에 더합니다.
-    arena = Arena(rom, auto_regions(rom)
-                  + dead_regions(rom, translated))
+    base_len = len(rom)
+    regions = auto_regions(rom) + dead_regions(rom, translated)
+    # 원본 빈 자리로 모자라면 ROM 뒤를 늘려 흘려보냅니다. 다 넣은 뒤
+    # 쓰지 않은 만큼은 도로 잘라내므로 ROM 은 필요한 만큼만 커집니다.
+    spill = []
+    if expand > base_len:
+        expand_rom(rom, expand)
+        if len(rom) - 4 > base_len:
+            spill = [(base_len, len(rom) - 4)]
+    arena = Arena(rom, regions, spill)
     # 훅은 호출 지점에서 bl 사거리 안에 있어야 합니다.
     sites = [(kohook.CALL_SITE, kohook.GET_WIDE, 0, 6, False),
              (kohook.CALL_SITE_HALF, kohook.GET_HALF, 8, 6, False),
              (kohook.CALL_SITE_MENU, kohook.GET_HALF, 0, 8, True)]
-    hooks = [arena.alloc(256, align=2, near=s[0]) for s in sites]
+    hooks = [arena.alloc(HOOK_SIZE, align=2, near=s[0]) for s in sites]
     slot_at = arena.alloc(len(slot))
     glyph_at = arena.alloc(len(glyphs))
     glyph8_at = arena.alloc(len(glyphs8))
@@ -257,6 +302,9 @@ def build_patch(rom: bytearray, ko_dir: str, tables: list[int],
                             glyph8_p if small else glyph_p,
                             fallback=fb, dst_back=back, stream_reg=sreg,
                             small=small)
+        if len(code) > HOOK_SIZE:
+            raise InsertError(f"훅이 잡아 둔 자리를 넘었습니다: "
+                              f"{len(code)} > {HOOK_SIZE}바이트")
         rom[at:at + len(code)] = code
         o = site - common.ROM_BASE
         rom[o:o + 4] = thumb.bl_bytes(site, common.off_to_ptr(at))
@@ -274,7 +322,11 @@ def build_patch(rom: bytearray, ko_dir: str, tables: list[int],
             written += len(data)
             entries += 1
 
+    if len(rom) > base_len:
+        rom = trim_rom(rom, max(base_len, arena.top))
+
     return rom, {
+        "ROM 크기": len(rom),
         "번역 항목": entries,
         "음절": count,
         "문자열 바이트": written,
@@ -283,6 +335,7 @@ def build_patch(rom: bytearray, ko_dir: str, tables: list[int],
         "글리프": common.off_to_ptr(glyph_at),
         "글리프8": common.off_to_ptr(glyph8_at),
         "남은 자유 공간": arena.remaining,
+        "확장 사용": arena.spilled,
     }
 
 
@@ -299,6 +352,9 @@ def main() -> int:
                     help="8행 렌더러(메뉴)용 8×8 한글 TTF")
     ap.add_argument("--size8", type=int, default=8)
     ap.add_argument("--top8", type=int, default=0)
+    ap.add_argument("--expand", type=common.parse_int, default=0,
+                    help=f"자유 공간이 모자라면 ROM 을 이 크기까지 늘립니다 "
+                         f"(최대 0x{GBA_MAX:X}). 안 쓴 뒤쪽은 잘라냅니다.")
     args = ap.parse_args()
 
     rom = common.load(args.rom)
@@ -314,7 +370,7 @@ def main() -> int:
         rom, stats = build_patch(rom, args.ko, tables, args.ttf,
                                  args.size, args.top,
                                  args.ttf8 if os.path.exists(args.ttf8) else None,
-                                 args.size8, args.top8)
+                                 args.size8, args.top8, args.expand)
     except InsertError as e:
         print(f"[!] {e}", file=sys.stderr)
         return 1
@@ -329,7 +385,12 @@ def main() -> int:
           f"({(stats['음절'] + 1) * 32:,}바이트)")
     print(f"  글리프 8×8       0x{stats['글리프8']:08X} "
           f"({(stats['음절'] + 1) * 8:,}바이트)")
-    print(f"  남은 자유 공간   {stats['남은 자유 공간']:,}바이트")
+    print(f"  남은 자유 공간   {stats['남은 자유 공간']:,}바이트 (원본 ROM)")
+    if stats["확장 사용"]:
+        print(f"  확장 구간 사용   {stats['확장 사용']:,}바이트")
+    grew = stats["ROM 크기"] - os.path.getsize(args.rom)
+    print(f"  ROM 크기         {stats['ROM 크기']:,}바이트"
+          + (f" (원본보다 +{grew:,})" if grew else " (원본 그대로)"))
 
     common.save(args.out, bytes(rom))
     print(f"\n출력: {args.out}  SHA-1 {common.digests(rom)['sha1']}")
