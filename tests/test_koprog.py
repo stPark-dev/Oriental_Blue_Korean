@@ -10,6 +10,9 @@
   DFBEE4  비-JPN 낱말표 — 읽는 코드가 없습니다 (tools/koshiri.py 참고)
   DF9080  끝말잇기 낱말 조각 — koshiri.py 가 롬을 직접 고칩니다
   DF809C  CAST 자막 · DF8494  STAFF 자막 — 제작진 실명이라 원문 유지
+  DFEB94 · DFED60 · DFF16C · DFFE9C · E011C8 · E0255C
+          개발용 장면 라벨 ("E074 ニンジャ船にのる" 꼴). 457항목이
+          제어 코드를 하나도 쓰지 않습니다 — 표시되는 표는 모두 씁니다.
 
 DE1AF8 은 **표째로 빼면 안 됩니다.** 화면에 나오는 아이템 이름표라
 738항목이 이미 번역돼 있습니다. 빼야 할 것은 그 안의 '0' 자리뿐입니다.
@@ -40,6 +43,11 @@ class ExcludeTest(unittest.TestCase):
 
     def test_제작진_자막도_제외한다(self):
         for name in ("DF809C", "DF8494"):
+            self.assertIn(name, koprog.EXCLUDED)
+
+    def test_개발용_장면_라벨도_제외한다(self):
+        for name in ("DFEB94", "DFED60", "DFF16C",
+                     "DFFE9C", "E011C8", "E0255C"):
             self.assertIn(name, koprog.EXCLUDED)
 
     def test_본편_대사_표는_제외하지_않는다(self):
