@@ -10,12 +10,13 @@
 삽입 시 건너뛰므로, 부분 번역 상태로도 빌드할 수 있습니다.
 
     python3 tools/dumpscript.py rom/baserom.gba
-    python3 tools/dumpscript.py rom/baserom.gba --min-count 32 --force-ko
+    python3 tools/dumpscript.py rom/baserom.gba --force-ko
 """
 from __future__ import annotations
 
 import argparse
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -62,6 +63,57 @@ def decode(data: bytes, table: dict) -> str:
     return "".join(out)
 
 
+DEFAULT_MIN_COUNT = 4      # 32 로 두면 작은 표(본편 대사 포함)가 통째로 빠집니다
+TEXT_SAMPLE = 40           # 표 하나를 판정할 때 펴 보는 항목 수
+TEXT_RATIO = 0.9           # 그 중 깨끗해야 하는 비율
+TEXT_MIN_FILLED = 3        # 비어 있지 않은 항목이 이만큼은 있어야 합니다
+TEXT_MAX_STRIDE = 128      # 항목당 평균 바이트. 넘으면 표가 아닙니다
+
+ESCAPE_RE = re.compile(r"<\$[0-9A-F]{2,4}>|<F\d:[0-9A-F]{2}>")
+# 본문에 실제로 나오는 제어 코드. 이 밖의 escape 는 해독 실패입니다.
+CONTROLS = frozenset(f"${c:02X}" for c in range(0x10, 0x20))
+
+
+def is_clean(text: str) -> bool:
+    """모르는 코드가 안 섞였는지.
+
+    표가 아닌 자리를 펴면 `<$100>` `<F3:00>` `<$FF>` 처럼 대응표에 없는
+    코드가 쏟아집니다. 본문이라면 `<$10>` 계열 제어 코드만 나옵니다.
+    """
+    return all(m.strip("<>") in CONTROLS for m in ESCAPE_RE.findall(text))
+
+
+def looks_like_text(rom: bytes, base: int, table: dict,
+                    sample: int = TEXT_SAMPLE) -> bool:
+    """표가 본문인지 봅니다.
+
+    **일본어 비율로는 못 가릅니다.** 아이템 이름·끝말잇기 낱말처럼 가나
+    한두 글자짜리 표도 멀쩡한 번역 대상이기 때문입니다. 대신 셋을 봅니다.
+
+    - 펴 본 항목이 깨끗한가 (`is_clean`)
+    - 비어 있지 않은 항목이 몇 개는 되는가
+    - 항목당 바이트 간격이 좁은가 (텍스트는 촘촘히 붙어 있습니다)
+    """
+    try:
+        count, entries = obtext.read_table(rom, base)
+    except Exception:
+        return False
+    if not entries or (max(entries) - min(entries)) / count > TEXT_MAX_STRIDE:
+        return False
+    filled = clean = 0
+    for off in entries[:sample]:
+        try:
+            text = decode(obtext.expand(rom, off), table)
+        except Exception:
+            continue
+        if not text.replace("\n", "").strip():
+            continue
+        filled += 1
+        if is_clean(text):
+            clean += 1
+    return filled >= TEXT_MIN_FILLED and clean / filled >= TEXT_RATIO
+
+
 def write_files(name: str, base: int, rows: list[tuple[int, int, str]],
                 ja_dir: str, ko_dir: str, force_ko: bool) -> None:
     os.makedirs(ja_dir, exist_ok=True)
@@ -94,7 +146,7 @@ def main() -> int:
     ap.add_argument("--ko", default="script/ko")
     ap.add_argument("--tables", default="build/strtables.tsv",
                     help="테이블 목록 TSV (없으면 직접 스캔)")
-    ap.add_argument("--min-count", type=int, default=32)
+    ap.add_argument("--min-count", type=int, default=DEFAULT_MIN_COUNT)
     ap.add_argument("--force-ko", action="store_true",
                     help="기존 번역 파일도 덮어씁니다 (주의)")
     args = ap.parse_args()
@@ -122,6 +174,10 @@ def main() -> int:
             continue
         # 크기 접두 바이너리 블롭 테이블은 텍스트가 아니므로 덤프하지 않습니다.
         if obtext.is_blob_table(rom, base):
+            blob_tables += 1
+            blob_entries += count - 1
+            continue
+        if not looks_like_text(rom, base, table):
             blob_tables += 1
             blob_entries += count - 1
             continue

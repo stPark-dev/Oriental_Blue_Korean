@@ -1,0 +1,59 @@
+# 테이블 0xEBF97C / 항목 27개
+# 원문은 script/ja/tEBF97C.txt 를 나란히 놓고 보세요.
+# 본문이 비어 있는 항목은 삽입 시 건너뜁니다 (원문 유지).
+# <F3:XX> 같은 서식 태그는 위치를 바꾸지 말고 그대로 두세요.
+
+## 0001 @0xEBF9EC
+
+## 0002 @0xEBFA28
+
+## 0003 @0xEBFA3F
+
+## 0004 @0xEBFA56
+
+## 0005 @0xEBFA9A
+
+## 0006 @0xEBFADE
+
+## 0007 @0xEBFB28
+
+## 0008 @0xEBFB6E
+
+## 0009 @0xEBFBC0
+
+## 0010 @0xEBFC02
+
+## 0011 @0xEBFC43
+
+## 0012 @0xEBFC75
+
+## 0013 @0xEBFCB2
+
+## 0014 @0xEBFCDD
+
+## 0015 @0xEBFD2A
+
+## 0016 @0xEBFD62
+
+## 0017 @0xEBFD7A
+
+## 0018 @0xEBFD92
+
+## 0019 @0xEBFDA5
+
+## 0020 @0xEBFDB8
+
+## 0021 @0xEBFDC8
+
+## 0022 @0xEBFDDB
+
+## 0023 @0xEBFDE5
+
+## 0024 @0xEBFDEF
+
+## 0025 @0xEBFDF8
+
+## 0026 @0xEBFDFF
+
+## 0027 @0xEBFE07
+

@@ -53,7 +53,7 @@ tbl-check: strings ## 대응표 커버리지 확인
 	@$(PYTHON) tools/mktbl.py $(ROM) -o $(BUILD)/ja.tbl --coverage
 
 strings: ## 문자열 테이블 탐색 -> build/strtables.tsv
-	@$(PYTHON) tools/obtext.py scan $(ROM) --min-count 32 -o $(BUILD)/strtables.tsv
+	@$(PYTHON) tools/obtext.py scan $(ROM) --min-count 4 -o $(BUILD)/strtables.tsv
 
 vm: ## 이벤트 VM 레코드 요약 (EN=영문판 지정 시 대조)
 	@$(PYTHON) tools/vmrec.py $(ROM) --stats --min-count 8 $(if $(EN),--diff $(EN))

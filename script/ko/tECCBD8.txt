@@ -1,0 +1,39 @@
+# 테이블 0xECCBD8 / 항목 17개
+# 원문은 script/ja/tECCBD8.txt 를 나란히 놓고 보세요.
+# 본문이 비어 있는 항목은 삽입 시 건너뜁니다 (원문 유지).
+# <F3:XX> 같은 서식 태그는 위치를 바꾸지 말고 그대로 두세요.
+
+## 0001 @0xECCC20
+
+## 0002 @0xECCC7E
+
+## 0003 @0xECCCB2
+
+## 0004 @0xECCCF0
+
+## 0005 @0xECCD4A
+
+## 0006 @0xECCD80
+
+## 0007 @0xECCDA0
+
+## 0008 @0xECCDB8
+
+## 0009 @0xECCDCB
+
+## 0010 @0xECCDDF
+
+## 0011 @0xECCDEF
+
+## 0012 @0xECCE02
+
+## 0013 @0xECCE0C
+
+## 0014 @0xECCE16
+
+## 0015 @0xECCE1F
+
+## 0016 @0xECCE26
+
+## 0017 @0xECCE2E
+
