@@ -94,7 +94,7 @@ sheet: ## 번역 작업 시트 -> build/sheet/ (TABLE=F2F2FC 로 하나만)
 same: ## 같은 원문의 기존 번역 전파 (WRITE=1 이면 실제로 채움)
 	@$(PYTHON) tools/kosame.py $(if $(WRITE),--write)
 
-flow: ## 창 폭을 넘는 줄 쪼개기 (GROW=n 으로 늘릴 줄 수 허용, WRITE=1 로 반영)
+flow: ## 창 폭을 넘는 줄 쪼개기 (GROW=8 로 늘릴 줄 수 허용, WRITE=1 로 반영)
 	@$(PYTHON) tools/koflow.py $(if $(WRITE),--write) $(if $(GROW),--grow $(GROW))
 
 audit: ## 번역문 전수 감사 (제어 코드·줄 수·printf·조사)
