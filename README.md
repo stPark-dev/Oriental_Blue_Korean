@@ -136,6 +136,7 @@ make test       # 테스트 175개
 make script     # 원문 덤프 -> script/ja/
 make insert     # 번역문 삽입 -> build/patched.gba
 make width      # 창 밖으로 잘리는 줄 찾기
+make audit      # 제어 코드·줄 수·printf·조사 전수 감사
 make shiri      # 끝말잇기 낱말 사슬 검사
 make patch      # 배포용 BPS
 make            # 전체 타깃 목록
@@ -164,6 +165,7 @@ make            # 전체 타깃 목록
 | `tools/thumb.py` | 최소 THUMB 어셈블러 |
 | `tools/kohook.py` | 한글 출력 훅 (THUMB) |
 | `tools/kowidth.py` | 번역문 폭 검사 (잘림 방지) |
+| `tools/koaudit.py` | 제어 코드·줄 수·printf·조사 전수 감사 |
 | `tools/kotitle.py` | 타이틀 로고·부제 · 오프닝 영문 로고 한글화 |
 | `tools/konarr.py` | 오프닝 나레이션 한글화 (스프라이트 글리프) |
 | `tools/koshiri.py` | 끝말잇기 낱말표 분석·사슬 검증·표식 재계산 |

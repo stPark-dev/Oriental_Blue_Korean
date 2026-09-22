@@ -40,6 +40,7 @@ make check          # SHA-1 대조
 | 5. 삽입 | `make insert` | 글리프·색인·훅 + 번역문 + 타이틀 삽입 → `build/patched.gba` |
 | 6. 패치 | `make patch` | `patch/oriental_blue_ko.bps` |
 | 7. 검증 | `make verify` / `make run` | 재적용 대조 · mGBA 실행 |
+| — | `make audit` | 제어 코드·줄 수·printf·조사 전수 감사 |
 | — | `make test` | 단위 + ROM 회귀 테스트 |
 
 `make insert` 가 하는 일:
@@ -171,6 +172,13 @@ make insert FONT=font/다른폰트.ttf
 괄호는 원문 표기와 맞추어 **전각 `（）`** 을 씁니다. 병기형은 조사 하나가
 6칸이므로 폭을 다시 확인해야 합니다. 코드가 아니라 번역문에 직접 쓴 이름
 (`「마야의　팔찌」를`)은 받침을 알 수 있으니 그대로 둡니다.
+
+### 메뉴 글꼴
+
+메시지 렌더러는 16×16, **메뉴 렌더러는 8×8** 글리프를 씁니다. 8×8 은
+`--ttf8` 로 지정하며 `make insert` 가 `font/Galmuri7.ttf` 를 넘깁니다.
+본문용 `Galmuri14` 를 8픽셀로 줄이면 획이 빽빽한 음절(「좋」 같은)이 뭉개져
+알아볼 수 없게 됩니다 — 실기에서 확인했습니다.
 
 ### 폭
 
