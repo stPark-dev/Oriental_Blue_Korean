@@ -186,6 +186,7 @@ make            # 전체 타깃 목록
 | `tools/kohook.py` | 한글 출력 훅 (THUMB) |
 | `tools/kowidth.py` | 번역문 폭 검사 (잘림 방지) |
 | `tools/koflow.py` | 넘치는 줄 쪼개기 — 글자를 바꾸지 않고 창 폭 안으로 |
+| `tools/kofit.py` | 쪼개도 안 되는 줄 — 줄인 문장 목록·일괄 교체 |
 | `tools/koaudit.py` | 제어 코드·줄 수·printf·조사 전수 감사 |
 | `tools/kotitle.py` | 타이틀 로고·부제 · 오프닝 영문 로고 한글화 |
 | `tools/konarr.py` | 오프닝 나레이션 한글화 (스프라이트 글리프) |

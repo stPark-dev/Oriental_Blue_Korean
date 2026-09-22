@@ -97,6 +97,9 @@ same: ## 같은 원문의 기존 번역 전파 (WRITE=1 이면 실제로 채움)
 flow: ## 창 폭을 넘는 줄 쪼개기 (GROW=8 로 늘릴 줄 수 허용, WRITE=1 로 반영)
 	@$(PYTHON) tools/koflow.py $(if $(WRITE),--write) $(if $(GROW),--grow $(GROW))
 
+fit: ## 쪼개도 안 되는 줄 — 줄여야 할 문장 목록 (COUNT=200)
+	@$(PYTHON) tools/kofit.py list --count $(or $(COUNT),100)
+
 audit: ## 번역문 전수 감사 (제어 코드·줄 수·printf·조사)
 	@$(PYTHON) tools/koaudit.py
 
@@ -139,4 +142,4 @@ clean: ## 빌드 산출물 삭제
 	@rm -rf $(BUILD)/*.gba $(BUILD)/*.tsv $(BUILD)/*.png $(BUILD)/*.log
 	@echo "정리 완료"
 
-.PHONY: help hooks test check width prog gloss same sheet flow audit shiri scan-ptr scan-text scan-lz tbl tbl-check strings vm grid grid-find script dump font-orig font insert title narr patch build verify run clean
+.PHONY: help hooks test check width fit prog gloss same sheet flow audit shiri scan-ptr scan-text scan-lz tbl tbl-check strings vm grid grid-find script dump font-orig font insert title narr patch build verify run clean
