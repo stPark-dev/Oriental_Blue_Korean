@@ -153,6 +153,7 @@ make test       # 테스트 175개
 make script     # 원문 덤프 -> script/ja/
 make insert     # 번역문 삽입 -> build/patched.gba
 make width      # 창 밖으로 잘리는 줄 찾기
+make flow       # 넘긴 줄을 쪼개 막아 두는 안전망 (GROW=8 WRITE=1)
 make audit      # 제어 코드·줄 수·printf·조사 전수 감사
 make shiri      # 끝말잇기 낱말 사슬 검사
 make patch      # 배포용 BPS
@@ -183,6 +184,7 @@ make            # 전체 타깃 목록
 | `tools/thumb.py` | 최소 THUMB 어셈블러 |
 | `tools/kohook.py` | 한글 출력 훅 (THUMB) |
 | `tools/kowidth.py` | 번역문 폭 검사 (대사창 20칸 · 메뉴 28칸) |
+| `tools/koflow.py` | 넘친 줄 쪼개기 — 글자를 바꾸지 않는 안전망 |
 | `tools/kofit.py` | 창 폭을 넘긴 줄 목록·일괄 교체 (안전 검사 포함) |
 | `tools/koaudit.py` | 제어 코드·줄 수·printf·조사 전수 감사 |
 | `tools/kotitle.py` | 타이틀 로고·부제 · 오프닝 영문 로고 한글화 |
