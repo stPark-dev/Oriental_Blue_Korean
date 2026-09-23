@@ -18,7 +18,7 @@ import obtext  # noqa: E402
 import thumb  # noqa: E402
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-TTF = os.path.join(ROOT, "font", "Galmuri14.ttf")
+TTF = "/home/stpark/다운로드/hanguel2/galmuri/Galmuri14.ttf"
 
 # 메뉴 설명문 "さいしょから　はじめます"
 TABLE, INDEX = 0xDF3908, 506
@@ -209,82 +209,6 @@ class RomPatchTest(unittest.TestCase):
     def test_대응되지_않는_문자는_중단시킨다(self):
         with self.assertRaises(inserttext.InsertError):
             self._build("☃")
-
-
-class ExpandRomTest(unittest.TestCase):
-    """GBA 카트리지 주소 공간(32MB) 안에서 ROM 뒤를 0xFF 로 늘립니다."""
-
-    def test_모자란_만큼_0xFF_로_늘린다(self):
-        out = inserttext.expand_rom(bytearray(b"\x00" * 8), 16)
-        self.assertEqual(len(out), 16)
-        self.assertEqual(bytes(out[8:]), b"\xff" * 8)
-
-    def test_이미_크면_그대로_둔다(self):
-        out = inserttext.expand_rom(bytearray(b"\x00" * 32), 16)
-        self.assertEqual(len(out), 32)
-
-    def test_주소_공간을_넘으면_오류(self):
-        with self.assertRaises(inserttext.InsertError):
-            inserttext.expand_rom(bytearray(4), inserttext.GBA_MAX + 1)
-
-    def test_늘린_자리를_자유_공간으로_찾아낸다(self):
-        rom = inserttext.expand_rom(bytearray(b"\x00" * 0x100), 0x4000)
-        regions = inserttext.auto_regions(rom, min_size=0x100)
-        self.assertEqual(regions, [(0x104, 0x3FFC)])
-
-
-class TrimRomTest(unittest.TestCase):
-    """늘려 놓고 쓰지 않은 뒤쪽은 잘라냅니다 (패치가 커지지 않도록)."""
-
-    def test_쓴_곳까지만_남기고_경계로_올림한다(self):
-        rom = bytearray(b"\xff" * 0x40000)
-        self.assertEqual(len(inserttext.trim_rom(rom, 0x10001, 0x10000)),
-                         0x20000)
-
-    def test_경계에_딱_맞으면_그대로다(self):
-        rom = bytearray(b"\xff" * 0x40000)
-        self.assertEqual(len(inserttext.trim_rom(rom, 0x20000, 0x10000)),
-                         0x20000)
-
-    def test_이미_작으면_늘리지_않는다(self):
-        rom = bytearray(b"\xff" * 0x8000)
-        self.assertEqual(len(inserttext.trim_rom(rom, 0x20000, 0x10000)),
-                         0x8000)
-
-    def test_기준이_0이면_오류(self):
-        """ROM 을 통째로 지우는 사고를 막습니다."""
-        with self.assertRaises(inserttext.InsertError):
-            inserttext.trim_rom(bytearray(0x1000), 0)
-
-
-class ArenaTest(unittest.TestCase):
-    def test_확장_구간은_원본_빈_공간을_다_쓴_뒤에_쓴다(self):
-        a = inserttext.Arena(bytearray(0x200), [(0x00, 0x20)],
-                             spill=[(0x100, 0x200)])
-        self.assertEqual(a.alloc(0x20), 0x00)
-        self.assertEqual(a.alloc(0x10), 0x100)
-
-    def test_가장_뒤까지_쓴_끝을_기록한다(self):
-        a = inserttext.Arena(bytearray(0x200), [(0x00, 0x20)],
-                             spill=[(0x100, 0x200)])
-        a.alloc(0x20)
-        a.alloc(0x10)
-        self.assertEqual(a.top, 0x110)
-
-    def test_아무것도_안_쓰면_끝이_0이다(self):
-        a = inserttext.Arena(bytearray(0x200), [(0x00, 0x20)])
-        self.assertEqual(a.top, 0)
-
-    def test_남은_자유_공간은_원본분만_센다(self):
-        """확장분까지 더하면 원본이 언제 바닥났는지 안 보입니다."""
-        a = inserttext.Arena(bytearray(0x200), [(0x00, 0x20)],
-                             spill=[(0x100, 0x200)])
-        self.assertEqual(a.remaining, 0x20)
-        a.alloc(0x20)
-        self.assertEqual(a.remaining, 0)
-        self.assertEqual(a.spilled, 0)
-        a.alloc(0x10)
-        self.assertEqual(a.spilled, 0x10)
 
 
 if __name__ == "__main__":

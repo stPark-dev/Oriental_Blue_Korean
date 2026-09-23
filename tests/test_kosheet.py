@@ -18,25 +18,35 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                 "..", "tools"))
 import kosheet  # noqa: E402
+import kowidth  # noqa: E402
 
 
 class BudgetTest(unittest.TestCase):
-    """한글은 한 자에 2칸. 그대로 남는 기호를 뺀 나머지를 나눕니다."""
+    """한글은 한 자에 2칸. 그대로 남는 기호를 뺀 나머지를 나눕니다.
 
-    def test_기호가_없으면_１３자(self):
-        self.assertEqual(kosheet.budget("あいうえお"), 13)
+    창 폭은 표마다 다르므로 한도를 인자로 받습니다 — 필드 대사 20칸.
+    """
+
+    FIELD = kowidth.FIELD_CELLS      # 20
+    MENU = kowidth.MENU_CELLS        # 28
+
+    def test_기호가_없으면_１０자(self):
+        self.assertEqual(kosheet.budget("あいうえお", self.FIELD), 10)
 
     def test_전각공백이_자리를_먹는다(self):
-        self.assertEqual(kosheet.budget("あい　うえ"), 12)
+        self.assertEqual(kosheet.budget("あい　うえ", self.FIELD), 9)
 
     def test_괄호와_느낌표도_먹는다(self):
-        self.assertEqual(kosheet.budget("「あい」！"), 11)
+        self.assertEqual(kosheet.budget("「あい」！", self.FIELD), 8)
 
     def test_제어코드는_안_먹는다(self):
-        self.assertEqual(kosheet.budget("<$10>あい"), 13)
+        self.assertEqual(kosheet.budget("<$10>あい", self.FIELD), 10)
 
-    def test_빈_줄은_１３자(self):
-        self.assertEqual(kosheet.budget(""), 13)
+    def test_빈_줄은_１０자(self):
+        self.assertEqual(kosheet.budget("", self.FIELD), 10)
+
+    def test_메뉴_표는_창이_더_넓다(self):
+        self.assertEqual(kosheet.budget("あいうえお", self.MENU), 14)
 
 
 class TermTest(unittest.TestCase):

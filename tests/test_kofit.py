@@ -15,21 +15,7 @@ import kofit  # noqa: E402
 import kowidth  # noqa: E402
 
 SP = "　"
-# 창 폭은 표마다 다릅니다 (kowidth.table_limit). 본문 표는 대개 20칸이라
-# 검사 로직만 보는 여기서는 20 을 씁니다.
-FIELD = 20
-
-
-class TableLimitTest(unittest.TestCase):
-    """창 폭은 그 표의 원문이 실제로 쓴 가장 넓은 줄입니다."""
-
-    def test_원문이_쓴_가장_넓은_줄이_한계(self):
-        # 4칸 · 6칸 -> 6칸
-        self.assertEqual(kowidth.table_limit(["ああああ", "いいいいいい"]), 6)
-
-    def test_색인_데이터는_폭에서_뺀다(self):
-        self.assertEqual(
-            kowidth.table_limit(["ああ", "보통의　검／보통의　검"]), 2)
+FIELD = kowidth.FIELD_CELLS      # 20
 
 
 class CheckTest(unittest.TestCase):

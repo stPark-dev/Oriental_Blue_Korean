@@ -35,7 +35,7 @@
 ## 🤝 번역 이어받기
 
 남은 번역을 이어받으신다면 **[docs/HANDOFF.md](docs/HANDOFF.md)** 를 먼저 읽어 주세요.
-제어 코드·줄 수·창 폭처럼 **어기면 게임이 조용히 깨지는 규칙**과 검사 방법이
+제어 코드·줄 수·26칸 폭처럼 **어기면 게임이 조용히 깨지는 규칙**과 검사 방법이
 정리되어 있습니다.
 
 ```bash
@@ -43,7 +43,6 @@ make prog     # 진행률
 make sheet    # 작업 시트 -> build/sheet/
 make audit    # 구조 감사
 make width    # 폭 검사
-make flow     # 폭 초과 줄 쪼개기
 make gloss    # 용어 일관성
 ```
 
@@ -154,7 +153,6 @@ make test       # 테스트 175개
 make script     # 원문 덤프 -> script/ja/
 make insert     # 번역문 삽입 -> build/patched.gba
 make width      # 창 밖으로 잘리는 줄 찾기
-make flow       # 넘치는 줄 쪼개기 (GROW=8 WRITE=1 로 반영)
 make audit      # 제어 코드·줄 수·printf·조사 전수 감사
 make shiri      # 끝말잇기 낱말 사슬 검사
 make patch      # 배포용 BPS
@@ -184,9 +182,8 @@ make            # 전체 타깃 목록
 | `tools/kofont.py` | 음절 글리프 · 색인 테이블 생성 |
 | `tools/thumb.py` | 최소 THUMB 어셈블러 |
 | `tools/kohook.py` | 한글 출력 훅 (THUMB) |
-| `tools/kowidth.py` | 번역문 폭 검사 (잘림 방지) |
-| `tools/koflow.py` | 넘치는 줄 쪼개기 — 글자를 바꾸지 않고 창 폭 안으로 |
-| `tools/kofit.py` | 쪼개도 안 되는 줄 — 줄인 문장 목록·일괄 교체 |
+| `tools/kowidth.py` | 번역문 폭 검사 (대사창 20칸 · 메뉴 28칸) |
+| `tools/kofit.py` | 창 폭을 넘긴 줄 목록·일괄 교체 (안전 검사 포함) |
 | `tools/koaudit.py` | 제어 코드·줄 수·printf·조사 전수 감사 |
 | `tools/kotitle.py` | 타이틀 로고·부제 · 오프닝 영문 로고 한글화 |
 | `tools/konarr.py` | 오프닝 나레이션 한글화 (스프라이트 글리프) |

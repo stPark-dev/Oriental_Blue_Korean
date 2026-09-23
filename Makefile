@@ -11,9 +11,6 @@ FONT    ?= font/Galmuri14.ttf
 FONT8   ?= font/Galmuri7.ttf
 LOGO    ?= art/title_ko.png
 SHA1    ?= 414cad1aee67ab20f3c133f0259da7e8c3073bbc
-# 원본 빈 공간이 모자라면 ROM 을 여기까지 늘립니다 (GBA 최대 32MB).
-# 안 쓴 뒤쪽은 도로 잘라내므로 실제 크기는 필요한 만큼만 커집니다.
-ROMMAX  ?= 0x2000000
 
 .DEFAULT_GOAL := help
 
@@ -82,6 +79,9 @@ font: ## 한글 글리프 미리보기 -> build/kofont.png
 width: ## 번역문 폭 검사 (창 밖으로 잘리는 줄 찾기)
 	@$(PYTHON) tools/kowidth.py
 
+fit: ## 창 폭을 넘긴 줄 목록 (COUNT=200 으로 개수 조절)
+	@$(PYTHON) tools/kofit.py list --count $(or $(COUNT),100)
+
 prog: ## 번역 진행률 (LEFT=1 이면 남은 표 목록도)
 	@$(PYTHON) tools/koprog.py $(if $(LEFT),--left)
 
@@ -94,12 +94,6 @@ sheet: ## 번역 작업 시트 -> build/sheet/ (TABLE=F2F2FC 로 하나만)
 same: ## 같은 원문의 기존 번역 전파 (WRITE=1 이면 실제로 채움)
 	@$(PYTHON) tools/kosame.py $(if $(WRITE),--write)
 
-flow: ## 창 폭을 넘는 줄 쪼개기 (GROW=8 로 늘릴 줄 수 허용, WRITE=1 로 반영)
-	@$(PYTHON) tools/koflow.py $(if $(WRITE),--write) $(if $(GROW),--grow $(GROW))
-
-fit: ## 쪼개도 안 되는 줄 — 줄여야 할 문장 목록 (COUNT=200)
-	@$(PYTHON) tools/kofit.py list --count $(or $(COUNT),100)
-
 audit: ## 번역문 전수 감사 (제어 코드·줄 수·printf·조사)
 	@$(PYTHON) tools/koaudit.py
 
@@ -111,7 +105,7 @@ shiri: ## 끝말잇기 낱말표 검사 (사슬·버퍼)
 insert: strings ## 번역문 + 한글 폰트 + 타이틀 삽입 -> build/patched.gba
 	@test -f $(FONT) || (echo "한글 TTF 가 없습니다: $(FONT)"; exit 1)
 	@$(PYTHON) tools/inserttext.py $(ROM) $(PATCHED) --ttf $(FONT) \
-		--expand $(ROMMAX) $$(test -f $(FONT8) && echo --ttf8 $(FONT8))
+		$$(test -f $(FONT8) && echo --ttf8 $(FONT8))
 	@if test -f $(LOGO) && test -f $(FONT8); then \
 		$(PYTHON) tools/kotitle.py $(PATCHED) --logo $(LOGO) --font $(FONT8); \
 	else \
@@ -142,4 +136,4 @@ clean: ## 빌드 산출물 삭제
 	@rm -rf $(BUILD)/*.gba $(BUILD)/*.tsv $(BUILD)/*.png $(BUILD)/*.log
 	@echo "정리 완료"
 
-.PHONY: help hooks test check width fit prog gloss same sheet flow audit shiri scan-ptr scan-text scan-lz tbl tbl-check strings vm grid grid-find script dump font-orig font insert title narr patch build verify run clean
+.PHONY: help hooks test check width fit prog gloss same sheet audit shiri scan-ptr scan-text scan-lz tbl tbl-check strings vm grid grid-find script dump font-orig font insert title narr patch build verify run clean

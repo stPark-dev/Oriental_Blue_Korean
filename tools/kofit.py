@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """창 폭을 넘기는 줄을 찾아 주고, 줄인 문장으로 안전하게 바꿔 넣습니다.
 
-`kowidth.py` 가 「넘친다」를, `koflow.py` 가 「쪼개서 되는 것」을 맡습니다.
-이 도구는 그 둘로 안 되는 것 — **글을 줄여야 하는 자리**를 돕습니다.
+`kowidth.py` 가 「넘친다」를 알려 준다면, 이 도구는 **고치는 일**을 돕습니다.
 
     python3 tools/kofit.py list                 # 고칠 문장 목록 (많이 나온 순)
     python3 tools/kofit.py list --start 200 --count 100
@@ -10,14 +9,11 @@
     python3 tools/kofit.py rules                # 정형 축약만 기계로 (시험)
     python3 tools/kofit.py rules --write
 
-창 폭은 `kowidth.table_limit` 이 정합니다 — **표마다 원문이 실제로 쓴
-가장 넓은 줄**입니다. 같은 문장이 여러 표에 있으면 가장 좁은 창에
-맞춥니다.
-
 ## 왜 문장 단위인가
 
 같은 문장이 여러 표에 되풀이됩니다. 한 번 줄여 두면 나오는 곳마다 같이
-고쳐지고, 표기도 저절로 통일됩니다.
+고쳐지고, 표기도 저절로 통일됩니다. 12,013줄이 서로 다른 문장 9,000개
+였습니다.
 
 ## apply 가 막아 주는 것
 
@@ -105,11 +101,8 @@ def overflowing(ja_dir: str = "script/ja", ko_dir: str = "script/ko"):
         japath = os.path.join(ja_dir, name)
         if not os.path.exists(japath):
             continue
-        ja_entries = ScriptFile.read(japath).entries
-        ja = {e.index: e.text for e in ja_entries}
-        limit = kowidth.table_limit([e.text for e in ja_entries])
-        if limit < kowidth.MIN_LIMIT:
-            continue
+        ja = {e.index: e.text for e in ScriptFile.read(japath).entries}
+        limit = kowidth.table_limit(name)
         for e in ScriptFile.read(path).entries:
             if not e.text.strip() or kowidth.is_index_data(e.text):
                 continue
@@ -144,21 +137,11 @@ def check(old: str, new: str, limit: int) -> str | None:
 
 
 def apply(fix: dict[str, str], ko_dir: str = "script/ko",
-          write: bool = True, ja_dir: str = "script/ja") -> tuple[int, int,
-                                                                 list[str]]:
-    """(고친 파일 수, 고친 줄 수, 건너뛴 까닭 목록).
-
-    같은 문장이 여러 표에 있으면 **가장 좁은 창**을 기준으로 봅니다.
-    """
+          write: bool = True) -> tuple[int, int, list[str]]:
+    """(고친 파일 수, 고친 줄 수, 건너뛴 까닭 목록)."""
     limits: dict[str, int] = {}
     for path in sorted(glob.glob(os.path.join(ko_dir, "*.txt"))):
-        japath = os.path.join(ja_dir, os.path.basename(path))
-        if not os.path.exists(japath):
-            continue
-        lim = kowidth.table_limit([e.text
-                                   for e in ScriptFile.read(japath).entries])
-        if lim < kowidth.MIN_LIMIT:
-            continue
+        lim = kowidth.table_limit(os.path.basename(path))
         for line in io.open(path, encoding="utf-8").read().split("\n"):
             if line in fix:
                 limits[line] = min(limits.get(line, 99), lim)
@@ -220,8 +203,7 @@ def cmd_list(args) -> int:
 
 def cmd_apply(args) -> int:
     fix = json.load(io.open(args.file, encoding="utf-8"))
-    files, hits, errs = apply(fix, args.ko, write=not args.dry,
-                              ja_dir=args.ja)
+    files, hits, errs = apply(fix, args.ko, write=not args.dry)
     head = "(시험) " if args.dry else ""
     print(f"{head}문장 {len(fix) - len(errs)}개 -> {hits:,}줄 "
           f"(파일 {files}개)")
@@ -244,8 +226,7 @@ def cmd_rules(args) -> int:
     if not fix:
         print("정형 축약으로 해결할 줄이 없습니다")
         return 0
-    files, hits, errs = apply(fix, args.ko, write=args.write,
-                              ja_dir=args.ja)
+    files, hits, errs = apply(fix, args.ko, write=args.write)
     head = "" if args.write else "(시험) "
     print(f"{head}정형 축약으로 {hits:,}줄 해결 (문장 {len(fix)}개 · "
           f"파일 {files}개)")
