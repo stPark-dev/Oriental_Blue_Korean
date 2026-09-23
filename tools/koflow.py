@@ -18,8 +18,10 @@
 
 건드리지 않는 것:
 
-- **제어 코드가 든 줄.** `<$10>` 같은 코드의 뜻을 아직 모르므로, 글자 대비
-  자리가 바뀌지 않게 통째로 비켜 갑니다.
+- **치환 코드가 아닌 제어 코드가 든 줄.** `<$10>` 같은 코드의 뜻을 아직
+  모르므로, 글자 대비 자리가 바뀌지 않게 통째로 비켜 갑니다. 이름·수치가
+  들어가는 치환 코드(`<$12>` `<$13>` `<$14>` `<$1F>`)는 글자처럼 그려지고
+  붙어 있는 단어와 함께 움직이므로 예외입니다.
 - **원문이 한 줄인 항목.** 이름·낱말·메뉴 문구라서 쪼개면 칸이 깨집니다
   (`와카나　공주` -> `와카나` / `공주`).
 - **원문 줄 수가 사실상 정해진 표.** 높이가 고정된 칸입니다. 그 표의 원문
@@ -40,10 +42,19 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import kowidth  # noqa: E402
 from script_io import ScriptFile  # noqa: E402
 
-TAG_RE = re.compile(r"<\$[0-9A-Fa-f]{2,3}>")
+TAG_RE = re.compile(r"<\$([0-9A-Fa-f]{2,3})>")
+# 글자처럼 그려지는 치환 코드 — 이름·수치·아이템 이름이 들어가는 자리입니다
+# (`<$12>은（는）` `<$13>개` `「<$14>」` `<$1F>s`). 붙어 있는 단어와 함께
+# 움직이므로 단어 **사이**에서 끊는 것은 안전합니다.
+INLINE_TAGS = frozenset((0x12, 0x13, 0x14, 0x1F))
 GAP_RE = re.compile(r"[ 　]+")
 # 표의 원문 줄 수가 이 가짓수 이하로만 나타나면 「높이가 정해진 칸」으로 봅니다.
 FIXED_HEIGHT_KINDS = 2
+
+
+def only_inline(line: str) -> bool:
+    """줄에 든 제어 코드가 전부 치환 코드인가. 아니면 그 줄은 손대지 않습니다."""
+    return all(int(t, 16) in INLINE_TAGS for t in TAG_RE.findall(line))
 
 
 def pieces(line: str) -> tuple[str, list[str], list[str], str]:
@@ -145,6 +156,21 @@ def split_line(line: str, limit: int, most: int) -> list[str] | None:
     return None
 
 
+def trim_tail(line: str, limit: int) -> str:
+    """줄 끝 전각공백 꼬리를 창 폭에 맞게 줄입니다.
+
+    꼬리는 그 줄에 남은 이전 화면 글자를 지우는 장치입니다. 지우는 **범위**가
+    창 폭이므로, 글자가 원문보다 넓어졌으면 그만큼 꼬리가 줄어도 지워지는
+    자리는 그대로입니다. 오히려 꼬리를 그대로 두면 창 밖으로 나갑니다.
+    """
+    body = line.rstrip("　")
+    tail = len(line) - len(body)
+    if not tail or kowidth.cells(line) <= limit:
+        return line
+    room = limit - kowidth.cells(body)
+    return body + "　" * max(0, min(tail, room))
+
+
 def reflow(text: str, limit: int, grow: int) -> str | None:
     """넘치는 줄을 쪼갠 본문. 손댈 게 없거나 못 하면 `None`.
 
@@ -153,8 +179,11 @@ def reflow(text: str, limit: int, grow: int) -> str | None:
     out: list[str] = []
     left = grow
     fixed = False
-    for line in text.split("\n"):
-        if (left <= 0 or not line.strip() or TAG_RE.search(line)
+    for raw in text.split("\n"):
+        line = trim_tail(raw, limit)
+        if line != raw:
+            fixed = True
+        if (left <= 0 or not line.strip() or not only_inline(line)
                 or kowidth.cells(line) <= limit):
             out.append(line)
             continue
@@ -169,15 +198,19 @@ def reflow(text: str, limit: int, grow: int) -> str | None:
 
 
 def allowed_grow(ja_counts: dict[int, int], ja_lines: int, ko_lines: int,
-                 grow: int) -> int:
+                 grow: int, field: bool) -> int:
     """이 항목에서 늘려도 되는 줄 수.
 
+    **필드 대사 창은 스크롤합니다** — 원문 항목의 줄 수가 1~63줄까지 고르게
+    있으므로 줄이 늘어도 됩니다.
+
+    메뉴·기록·아이템 표는 높이가 정해진 칸입니다:
+
     - **원문이 한 줄이면 0.** 이름·낱말·메뉴 문구라 한 칸에 그려집니다.
-    - **표의 원문 줄 수가 몇 가지뿐이면** 높이가 정해진 칸입니다. 그 표의
-      원문 최대 줄 수를 넘기지 않습니다 — 폭 한계를 표별 원문에서 얻는 것과
-      같은 근거입니다.
-    - 그 밖에는 흐르는 본문이므로 `grow` 만큼 허용합니다.
+    - **표의 원문 줄 수가 몇 가지뿐이면** 그 최대 줄 수를 넘기지 않습니다.
     """
+    if field:
+        return grow
     if ja_lines <= 1:
         return 0
     if 0 < len(ja_counts) <= FIXED_HEIGHT_KINDS:
@@ -242,7 +275,7 @@ def main() -> int:
                 continue
             grow = allowed_grow(counts,
                                 len(ja.get(e.index, "").split("\n")),
-                                len(lines), args.grow)
+                                len(lines), args.grow, kowidth.is_field(name))
             out = reflow(e.text, limit, grow)
             if out is not None:
                 moved += 1

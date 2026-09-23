@@ -84,13 +84,21 @@ def line_cells(text: str) -> list[int]:
     return [cells(line) for line in text.split("\n")]
 
 
+def is_field(name: str) -> bool:
+    """필드 대사 표인지 (파일 이름 `tE27024.txt` 의 주소로 갈립니다).
+
+    필드 대사 창은 **스크롤합니다** — 원문 항목의 줄 수가 1~63줄까지 고르게
+    있습니다. 메뉴·기록·아이템 표는 높이가 정해진 칸이라 다릅니다.
+    """
+    try:
+        return int(os.path.basename(name)[1:-4], 16) >= FIELD_TABLE_FROM
+    except ValueError:
+        return False
+
+
 def table_limit(name: str) -> int:
     """파일 이름(`tE27024.txt`)으로 그 표가 쓰는 창 폭을 정합니다."""
-    try:
-        base = int(os.path.basename(name)[1:-4], 16)
-    except ValueError:
-        return MENU_CELLS
-    return FIELD_CELLS if base >= FIELD_TABLE_FROM else MENU_CELLS
+    return FIELD_CELLS if is_field(name) else MENU_CELLS
 
 
 def is_index_data(text: str) -> bool:

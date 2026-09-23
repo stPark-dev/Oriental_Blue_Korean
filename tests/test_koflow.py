@@ -128,8 +128,8 @@ class ReflowTest(unittest.TestCase):
         self.assertEqual(out[-1], f"셋째{SEP}줄이다")
 
     def test_쪼갠_줄을_다시_이으면_원문과_같다(self):
-        """들여쓰기·줄 끝 공백·구분자가 글자 하나까지 그대로여야 합니다."""
-        line = f"{SEP}{self.LONG}{SEP}"
+        """들여쓰기와 구분자가 글자 하나까지 그대로여야 합니다."""
+        line = f"{SEP}{self.LONG}"
         out = koflow.reflow(f"{line}\n짧다", 20, 4).split("\n")
         self.assertEqual(SEP.join(out[:-1]), line)
         self.assertEqual(out[-1], "짧다")
@@ -140,14 +140,37 @@ class ReflowTest(unittest.TestCase):
         self.assertEqual(koflow.TAG_RE.findall(out),
                          koflow.TAG_RE.findall(text))
 
-    def test_grow_가_0이면_아무것도_안_한다(self):
-        self.assertIsNone(koflow.reflow(f"{SEP}{self.LONG}{SEP}", 20, 0))
+    def test_grow_가_0이면_줄을_쪼개지_않는다(self):
+        self.assertIsNone(koflow.reflow(f"{SEP}{self.LONG}", 20, 0))
+
+    def test_grow_가_0이어도_넘치는_꼬리는_줄인다(self):
+        """꼬리 줄이기는 줄을 늘리지 않으므로 grow 와 상관없습니다."""
+        out = koflow.reflow("가나" + "　" * 20, 20, 0)
+        self.assertEqual(kowidth.cells(out), 20)
 
     def test_이미_한계_안이면_손대지_않는다(self):
         self.assertIsNone(koflow.reflow("가나\n다라", 20, 4))
 
-    def test_제어코드가_든_줄은_넓어도_그대로_둔다(self):
+    def test_치환이_아닌_제어코드가_든_줄은_넓어도_그대로_둔다(self):
         self.assertIsNone(koflow.reflow(f"{self.LONG}<$10>", 20, 4))
+
+    def test_치환_코드가_든_줄은_쪼갠다(self):
+        """`<$12>` 는 이름이 들어가는 자리라 글자처럼 그려집니다."""
+        text = f"<$12>은（는）{SEP}「마야의{SEP}팔찌」를"
+        out = koflow.reflow(text, 20, 4)
+        self.assertIsNotNone(out)
+        for line in out.split("\n"):
+            self.assertLessEqual(kowidth.cells(line), 20)
+        self.assertEqual(koflow.TAG_RE.findall(out),
+                         koflow.TAG_RE.findall(text))
+
+    def test_치환_코드는_붙은_단어와_함께_움직인다(self):
+        out = koflow.reflow(f"<$12>은（는）{SEP}「마야의{SEP}팔찌」를", 20, 4)
+        self.assertTrue(any(l.startswith("<$12>은（는）")
+                            for l in out.split("\n")), out)
+
+    def test_치환_코드와_그_밖의_코드가_섞이면_손대지_않는다(self):
+        self.assertIsNone(koflow.reflow(f"<$12>{SEP}{self.LONG}<$10>", 20, 4))
 
     def test_늘릴_줄_수를_넘으면_그_줄은_포기한다(self):
         self.assertIsNone(koflow.reflow(SEP.join(["가나다라"] * 9), 20, 1))
@@ -159,27 +182,64 @@ class ReflowTest(unittest.TestCase):
         self.assertLessEqual(kowidth.cells(out[1]), 20)
 
 
+class TrimTailTest(unittest.TestCase):
+    """꼬리는 그 줄을 지우는 장치라 **지우는 범위**가 창 폭입니다."""
+
+    def test_넘치는_만큼_꼬리를_줄인다(self):
+        line = "허나" + "　" * 18                     # 4 + 18 = 22칸
+        got = koflow.trim_tail(line, 20)
+        self.assertEqual(kowidth.cells(got), 20)
+        self.assertTrue(got.startswith("허나"))
+
+    def test_한계_안이면_꼬리를_건드리지_않는다(self):
+        line = "허나" + "　" * 16                     # 20칸
+        self.assertEqual(koflow.trim_tail(line, 20), line)
+
+    def test_꼬리가_없으면_그대로다(self):
+        self.assertEqual(koflow.trim_tail("가나다라", 4), "가나다라")
+
+    def test_글자만으로_이미_넘치면_꼬리를_모두_없앤다(self):
+        line = "가" * 12 + "　" * 4                   # 글자만 24칸
+        self.assertEqual(koflow.trim_tail(line, 20), "가" * 12)
+
+    def test_reflow_가_꼬리부터_줄인다(self):
+        text = "허나" + "　" * 18
+        out = koflow.reflow(text, 20, 0)
+        self.assertEqual(kowidth.cells(out), 20)
+
+
 class AllowedGrowTest(unittest.TestCase):
     MANY = {1: 5, 2: 5, 3: 5, 4: 5}            # 줄 수가 여러 가지인 표
+    FIELD, MENU = True, False
 
-    def test_원문이_한_줄이면_늘리지_않는다(self):
-        self.assertEqual(koflow.allowed_grow(self.MANY, 1, 1, 8), 0)
+    def test_필드_대사는_창이_스크롤하므로_늘려도_된다(self):
+        """원문 항목의 줄 수가 1~63줄까지 고르게 있습니다."""
+        self.assertEqual(koflow.allowed_grow({4: 2, 6: 8}, 6, 6, 8,
+                                             self.FIELD), 8)
 
-    def test_줄_수가_여러_가지면_허용한_만큼(self):
-        self.assertEqual(koflow.allowed_grow(self.MANY, 3, 3, 8), 8)
+    def test_필드_대사는_원문이_한_줄이어도_늘려도_된다(self):
+        self.assertEqual(koflow.allowed_grow({1: 2, 2: 10}, 1, 1, 8,
+                                             self.FIELD), 8)
 
-    def test_원문_줄_수가_고정이면_그_최대치까지만(self):
-        """`tDE8060` 은 원문 76항목이 전부 2줄인 고정 높이 칸입니다."""
-        self.assertEqual(koflow.allowed_grow({2: 76}, 2, 2, 8), 0)
+    def test_메뉴는_원문이_한_줄이면_늘리지_않는다(self):
+        self.assertEqual(koflow.allowed_grow(self.MANY, 1, 1, 8, self.MENU), 0)
+
+    def test_메뉴도_줄_수가_여러_가지면_허용한_만큼(self):
+        self.assertEqual(koflow.allowed_grow(self.MANY, 3, 3, 8, self.MENU), 8)
+
+    def test_메뉴의_원문_줄_수가_고정이면_그_최대치까지만(self):
+        """`tDE8060` 은 원문 74항목이 전부 2줄인 고정 높이 칸입니다."""
+        self.assertEqual(koflow.allowed_grow({2: 74}, 2, 2, 8, self.MENU), 0)
 
     def test_고정_높이_칸도_남는_줄만큼은_늘린다(self):
-        self.assertEqual(koflow.allowed_grow({1: 900, 2: 60}, 2, 1, 8), 1)
+        self.assertEqual(koflow.allowed_grow({1: 900, 2: 60}, 2, 1, 8,
+                                             self.MENU), 1)
 
     def test_이미_최대치를_넘었으면_0(self):
-        self.assertEqual(koflow.allowed_grow({2: 76}, 2, 3, 8), 0)
+        self.assertEqual(koflow.allowed_grow({2: 74}, 2, 3, 8, self.MENU), 0)
 
     def test_분포가_비어_있으면_허용한_만큼(self):
-        self.assertEqual(koflow.allowed_grow({}, 3, 3, 8), 8)
+        self.assertEqual(koflow.allowed_grow({}, 3, 3, 8, self.MENU), 8)
 
 
 class TableLimitTest(unittest.TestCase):
@@ -188,6 +248,10 @@ class TableLimitTest(unittest.TestCase):
 
     def test_메뉴_기록_표는_28칸(self):
         self.assertEqual(kowidth.table_limit("tDE1AF8.txt"), 28)
+
+    def test_표_종류를_주소로_가른다(self):
+        self.assertTrue(kowidth.is_field("tE06168.txt"))
+        self.assertFalse(kowidth.is_field("tDE1AF8.txt"))
 
 
 class HeaderTest(unittest.TestCase):
