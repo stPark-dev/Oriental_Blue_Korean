@@ -50,7 +50,21 @@ OBJ_VRAM = 0x06010000
 TILE_BASE = 0x200
 PALETTE = 15
 OBJ_PAL = 0x05000200 + PALETTE * 32
-FIRST_SLOT = 96                            # 사본 96~127칸을 씁니다 (타이틀은 17칸만 씀)
+FIRST_SLOT = 72                            # 사본 72~127칸을 씁니다 (타이틀은 17칸만 씀)
+
+# 반짝임: 원본 로고는 돌벽에서 글자를 파내 뒤의 물결 층(BG0·BG1, 알파 섞기)이
+# 비치는 구조라 반짝입니다. 같은 효과를 OBJ 창으로 냅니다 — 글자 안쪽 모양의
+# 스프라이트를 OBJ 창 모드로 두고, 창 안에서는 BG2(돌벽)·OBJ(덮개)를 끕니다.
+# 게임은 표시 레지스터 사본을 IWRAM 0x03000990 에 두고 매 프레임 복사합니다
+# (0x08075D24: +0 -> DISPCNT, +8~+0x4D -> 0x04000008~ DMA). 레지스터에 바로
+# 쓰면 다음 복사에 지워져서, 사본을 고칩니다.
+IO_SHADOW = 0x03000990
+DISPCNT = IO_SHADOW + 0x00
+WINOUT = IO_SHADOW + 0x4A
+OBJWIN_BIT = 0x8000
+WINOUT_TITLE = (0x2B << 8) | 0x3F     # 창 안: BG0·BG1·BG3·효과 / 창 밖: 전부
+# 창을 켰다는 표시. OBJ 팔레트 15 의 0번 색(투명이라 화면에 안 나옴) 자리.
+WIN_FLAG = 0x05000200 + PALETTE * 32
 
 # 덮개: 배경판에서 못 칠하는 칸(원본 획이 남는 곳)을 돌벽 그림으로 덮습니다.
 # 색은 배경판 팔레트 1 을 OBJ 팔레트 14 로 옮겨 씁니다. 로고 뒤 칸에 두어
@@ -190,6 +204,74 @@ def _image(art: str):
     return im
 
 
+def subtitle_mask(im) -> list[bool]:
+    """부제(「— 청의 천외 —」, 남색 띠 포함) 화소."""
+    w, h = im.size
+    x0, y0, x1, y1 = subtitle_box(im)
+    y0 = max(0, y0 - SUB_EXTRA_TOP)
+    a = im.getchannel("A")
+    cols = [x for x in range(x0, x1)
+            if any(a.getpixel((x, y)) >= 128 for y in range(y0, y1))]
+    runs, cur = [], [cols[0]]
+    for x in cols[1:]:
+        if x - cur[-1] <= 10:               # 줄표와 글자 사이 틈까지 한 덩어리
+            cur.append(x)
+        else:
+            runs.append(cur)
+            cur = [x]
+    runs.append(cur)
+    mid = w // 2
+    best = min(runs, key=lambda r: 0 if r[0] <= mid <= r[-1]
+               else min(abs(r[0] - mid), abs(r[-1] - mid)))
+    gx0, gx1 = best[0], best[-1] + 1
+    out = [False] * (w * h)
+    for y in range(y0, y1):
+        for x in range(gx0, gx1):
+            if a.getpixel((x, y)) >= 128:
+                out[y * w + x] = True
+    return out
+
+
+def is_body(c) -> bool:
+    """글자 몸통 색 — 채도 높은 파랑. 여기를 물결 창으로 바꿉니다.
+
+    로고 그림은 회색 금속 테두리, 아주 어두운 남색 외곽선, 파란 몸통으로
+    되어 있습니다. 테두리·외곽선은 그대로 두어야 획이 갈려 보입니다.
+    """
+    r, g, b, a = c
+    return a >= 128 and b >= BODY_MIN_BLUE and b - max(r, g) >= BODY_MIN_SAT
+
+
+BODY_MIN_BLUE = 90
+BODY_MIN_SAT = 60
+
+
+def layers(art: str):
+    """(창 마스크, 일반 그림).
+
+    창 마스크는 워드마크 글자 몸통(파란 부분) — 여기로 원본처럼 뒤의
+    물결 층이 비칩니다. 일반 그림은 글자의 금속 테두리·외곽선과 부제입니다.
+    """
+    from PIL import Image
+    im = _image(art)
+    w, h = im.size
+    sub = subtitle_mask(im)
+    src = im.load()
+    body = [0] * (w * h)
+    normal = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    dst = normal.load()
+    for i in range(w * h):
+        x, y = i % w, i // w
+        c = src[x, y]
+        if c[3] < 128:
+            continue
+        if not sub[i] and is_body(c):
+            body[i] = 1
+        else:
+            dst[x, y] = c
+    return body, normal
+
+
 def _quantize(im):
     """(색 번호 그림, 팔레트 32바이트). 0번은 투명."""
     from PIL import Image
@@ -222,29 +304,40 @@ def build_assets(art: str, covers=()) -> dict:
     """로고 타일·팔레트·OAM 표. ROM 은 건드리지 않습니다.
 
     `covers` 는 `kotitle.cover_cells` 의 (화면 x, 화면 y, 64화소) 목록입니다.
+    OAM 은 [테두리·부제] [창] [덮개] 순서입니다 (앞 칸이 위).
     """
-    px, palette = _quantize(_image(art))
+    body, normal = layers(art)
+    px, palette = _quantize(normal)
     tiles = bytearray()
-    oam = []
-    for x, y, w, h in layout(LOGO_W, LOGO_H):
-        piece = [_tile(px, x + tx * 8, y + ty * 8)
-                 for ty in range(h // 8) for tx in range(w // 8)]
-        if not any(any(t) for t in piece):
-            continue                       # 다 투명한 조각은 건너뜁니다
-        oam.append(attrs(LOGO_X + x, LOGO_Y + y, w, h,
-                         TILE_BASE + len(tiles) // 32))
-        tiles += b"".join(piece)
+
+    def pieces(src, mode):
+        out = []
+        for x, y, w, h in layout(LOGO_W, LOGO_H):
+            piece = [_tile(src, x + tx * 8, y + ty * 8)
+                     for ty in range(h // 8) for tx in range(w // 8)]
+            if not any(any(t) for t in piece):
+                continue                   # 다 투명한 조각은 건너뜁니다
+            a0, a1, a2 = attrs(LOGO_X + x, LOGO_Y + y, w, h,
+                               TILE_BASE + len(tiles) // 32)
+            out.append((a0 | (mode << 10), a1, a2))
+            tiles.extend(b"".join(piece))
+        return out
+    oam = pieces(px, 0)
+    windows = pieces(body, 2)              # OBJ 창 모드
     cell = {(x, y): p for x, y, p in covers}
     cov = []
     for x, y, w in cover_runs(list(cell)):
         cov.append(attrs(x, y, w, 8, TILE_BASE + len(tiles) // 32,
                          COVER_PALETTE))
         tiles += b"".join(_px_tile(cell[(x + k * 8, y)]) for k in range(w // 8))
-    if FIRST_SLOT + len(oam) + len(cov) > 128:
-        raise ValueError(f"OAM 칸이 모자랍니다: {len(oam)} + {len(cov)}")
+    total = len(oam) + len(windows) + len(cov)
+    if FIRST_SLOT + total > 128:
+        raise ValueError(f"OAM 칸이 모자랍니다: {total}")
+    if TILE_BASE + len(tiles) // 32 > 0x400:
+        raise ValueError(f"OBJ 타일이 모자랍니다: {len(tiles) // 32}")
     sig = next(i for i in range(0, len(tiles), 4) if any(tiles[i:i + 4]))
     return {"tiles": bytes(tiles), "lz": gbalz.compress(bytes(tiles)),
-            "palette": palette, "oam": oam, "covers": cov,
+            "palette": palette, "oam": oam, "windows": windows, "covers": cov,
             "sig": (sig, int.from_bytes(tiles[sig:sig + 4], "little"))}
 
 
@@ -319,10 +412,38 @@ def build_hook(at: int, table: int, count: int, lz: int, palette: int,
     a.adds_imm8(1, 8)
     a.subs_imm8(2, 1)
     a.bne("put")
+    # OBJ 창 켜기 — 글자 안쪽으로 물결이 비칩니다
+    a.ldr_pool(0, DISPCNT)
+    a.ldrh_imm(1, 0, 0)
+    a.ldr_pool(2, OBJWIN_BIT)
+    a.orrs(1, 2)
+    a.strh_imm(1, 0, 0)
+    a.ldr_pool(0, WINOUT)
+    a.ldr_pool(1, WINOUT_TITLE)
+    a.strh_imm(1, 0, 0)
+    a.ldr_pool(0, WIN_FLAG)
+    a.movs(1, 1)
+    a.strh_imm(1, 0, 0)
     a.b("done")
 
     # --- 타이틀이 아니면 로고 칸만 숨긴다 ---
     a.mark("hide")
+    # 타이틀에서 OBJ 창을 켰으면(표시가 있으면) 되돌립니다
+    a.ldr_pool(0, WIN_FLAG)
+    a.ldrh_imm(1, 0, 0)
+    a.cmp_imm(1, 1)
+    a.bne("hide2")
+    a.movs(1, 0)
+    a.strh_imm(1, 0, 0)
+    a.ldr_pool(0, DISPCNT)
+    a.ldrh_imm(1, 0, 0)
+    a.ldr_pool(2, OBJWIN_BIT)
+    a.bics(1, 2)
+    a.strh_imm(1, 0, 0)
+    a.ldr_pool(0, WINOUT)
+    a.movs(1, 0)
+    a.strh_imm(1, 0, 0)
+    a.mark("hide2")
     a.ldr_pool(0, table)
     a.ldr_pool(1, first)
     a.movs(2, count)
@@ -360,7 +481,7 @@ def install(rom: bytearray, alloc, art: str, covers=None) -> dict:
     if covers is None:
         covers = kotitle.cover_cells(kotitle.load_tiles(rom))
     a = build_assets(art, covers)
-    entries = a["oam"] + a["covers"]
+    entries = a["oam"] + a["windows"] + a["covers"]
     table = table_bytes(entries)
     places = {}
     for name, data in (("lz", a["lz"]), ("palette", a["palette"]),

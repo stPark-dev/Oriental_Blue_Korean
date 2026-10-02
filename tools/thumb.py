@@ -107,6 +107,12 @@ class Asm:
     def subs(self, rd: int, rn: int, rm: int) -> None:
         self._e(0x1A00 | (rm << 6) | (rn << 3) | rd)
 
+    def orrs(self, rd: int, rm: int) -> None:
+        self._e(0x4300 | (rm << 3) | rd)
+
+    def bics(self, rd: int, rm: int) -> None:
+        self._e(0x4380 | (rm << 3) | rd)
+
     def muls(self, rd: int, rm: int) -> None:
         self._e(0x4340 | (rm << 3) | rd)
 

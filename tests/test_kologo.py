@@ -77,6 +77,29 @@ class AssetTest(unittest.TestCase):
             for x in range(x0, x1):
                 self.assertGreaterEqual(a.getpixel((x, y)), 128, (x, y))
 
+    def test_글자_몸통은_창_테두리와_부제는_그림(self):
+        body, normal = kologo.layers(ART)
+        W, H = kologo.LOGO_W, kologo.LOGO_H
+        self.assertEqual(len(body), W * H)
+        im = kologo._image(ART)
+        sub = kologo.subtitle_mask(im)
+        src, px = im.load(), normal.load()
+        for i in range(W * H):
+            x, y = i % W, i // W
+            if body[i]:
+                self.assertFalse(sub[i])                 # 창은 워드마크만
+                self.assertTrue(kologo.is_body(src[x, y]))
+                self.assertLess(px[x, y][3], 128)        # 창 자리엔 그림 없음
+            elif src[x, y][3] >= 128:
+                self.assertEqual(px[x, y], src[x, y])    # 나머지는 그림 그대로
+        self.assertGreater(sum(body), 1000)
+
+    def test_창_조각은_OBJ_창_모드(self):
+        wins = self.a["windows"]
+        self.assertGreater(len(wins), 0)
+        for a0, _a1, _a2 in wins:
+            self.assertEqual((a0 >> 10) & 3, 2)
+
     def test_팔레트는_16색_0번은_투명(self):
         self.assertEqual(len(self.a["palette"]), 32)
 
@@ -167,6 +190,21 @@ class HookTest(unittest.TestCase):
                                  kologo.build_assets(ART, [])["sig"])
         self.assertEqual(len(hook), size)
         self.assertEqual(bytes(rom[hook_at:hook_at + size]), hook)
+
+    def test_타이틀에서_OBJ_창을_켜고_나가면_되돌린다(self):
+        self.assertIn(kologo.DISPCNT, self.pool)
+        self.assertIn(kologo.WINOUT, self.pool)
+        self.assertIn(kologo.WINOUT_TITLE, self.pool)
+        self.assertIn(kologo.WIN_FLAG, self.pool)
+        self.assertTrue(any(d.startswith("orrs") for d in self.dis))
+        self.assertTrue(any(d.startswith("bics") for d in self.dis))
+
+    def test_창_안에는_돌벽과_스프라이트가_없다(self):
+        objwin = kologo.WINOUT_TITLE >> 8
+        self.assertEqual(objwin & 0x04, 0)          # BG2(돌벽) 끔
+        self.assertEqual(objwin & 0x10, 0)          # OBJ(덮개) 끔
+        self.assertEqual(objwin & 0x03, 0x03)       # BG0·BG1(물결) 켬
+        self.assertEqual(kologo.WINOUT_TITLE & 0xFF, 0x3F)   # 창 밖은 그대로
 
     def test_호출_지점_원본(self):
         self.assertEqual(kologo.SITE_ORIG, bytes.fromhex("08490848"))

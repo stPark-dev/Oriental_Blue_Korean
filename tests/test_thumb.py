@@ -73,6 +73,11 @@ class EncodingTest(unittest.TestCase):
                                 a.swi(0x12))),
             ["ldrh r1, [r2, #6]", "strh r3, [r4, #0x3e]", "svc #0x12"])
 
+    def test_비트_연산(self):
+        self.assertEqual(
+            self.asm(lambda a: (a.orrs(1, 2), a.bics(3, 4))),
+            ["orrs r1, r2", "bics r3, r4"])
+
     def test_하프워드_즉시값_범위(self):
         a = thumb.Asm(BASE)
         with self.assertRaises(thumb.AsmError):
