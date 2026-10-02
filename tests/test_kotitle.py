@@ -273,6 +273,14 @@ class RomTest(unittest.TestCase):
                              after[t * 32:(t + 1) * 32],
                              f"건드리면 안 되는 타일 0x{idx:03X}")
 
+    @unittest.skipUnless(os.path.exists(SUBFONT), "Galmuri11-Condensed 없음")
+    def test_부제_글꼴은_원래_픽셀_크기(self):
+        from PIL import Image, ImageDraw, ImageFont
+        face = ImageFont.truetype(SUBFONT, kotitle.SUBTITLE_SIZE)
+        img = Image.new("L", (64, 24), 0)
+        ImageDraw.Draw(img).text((2, 2), kotitle.SUBTITLE_TEXT, font=face, fill=255)
+        self.assertEqual([v for v in img.getdata() if 40 < v < 215], [])
+
     def test_부제는_두_줄_열두_타일(self):
         # 원본 「青の天外」는 16화소 높이 — 위 줄 0x140~ 와 아래 줄 0x160~.
         # 아래 줄만 고치면 위 줄에 일본어 글자 윗부분이 남습니다.

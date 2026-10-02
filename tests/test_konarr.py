@@ -67,6 +67,28 @@ class CellTest(unittest.TestCase):
         self.assertIn(konarr.EDGE, cell)
         self.assertNotIn(konarr.RIM, cell)     # 한글은 한 겹만 두릅니다
 
+    def test_글꼴은_원래_픽셀_크기로_그린다(self):
+        # Galmuri14 는 15 에서 픽셀 격자에 맞습니다. 14 로 그리면 획이 반 픽셀
+        # 걸쳐 옅어지고, 「름」의 ㅡ 처럼 통째로 빠지는 획이 생겼습니다.
+        from PIL import Image, ImageDraw
+        chars = {c for t in konarr.TEXT.values() for c in t if c != " "}
+        for ch in chars:
+            img = Image.new("L", (24, 24), 0)
+            ImageDraw.Draw(img).text((2, 2), ch, font=self.font, fill=255)
+            half = [v for v in img.getdata() if 40 < v < 215]
+            self.assertEqual(half, [], ch)
+
+    def test_름의_획이_다_있다(self):
+        cell = konarr.render_cell("름", self.font)
+        C = konarr.CELL
+        rows = [sum(1 for x in range(C) if cell[y * C + x] == konarr.STROKE)
+                for y in range(C)]
+        long_rows = [y for y, n in enumerate(rows) if n >= 9]
+        # ㄹ 세 줄 + ㅡ + ㅁ 위아래 = 가로획 여섯 줄
+        self.assertGreaterEqual(len(long_rows), 6, rows)
+        self.assertNotIn(konarr.STROKE, cell[:C])           # 위 끝 안 잘림
+        self.assertNotIn(konarr.STROKE, cell[-C:])          # 아래 끝 안 잘림
+
     def test_낫표는_글자_쪽으로_붙여_그린다(self):
         C = konarr.CELL
         for ch, side in (("「", "right"), ("」", "left")):
@@ -163,8 +185,19 @@ class RomTest(unittest.TestCase):
             for i in range(konarr.SPRITE_COUNT):
                 a = table + i * 8
                 self.assertEqual(common.u16(self.rom, a), common.u16(out, a))
-                self.assertEqual(common.u16(self.rom, a + 2) & 0xFE00,
-                                 common.u16(out, a + 2) & 0xFE00)
+                # 반전(0x1000) 밖의 비트는 그대로
+                self.assertEqual(common.u16(self.rom, a + 2) & 0xEE00,
+                                 common.u16(out, a + 2) & 0xEE00)
+
+    def test_반전은_표마다_한결같다(self):
+        # 원본은 레코드 49 만 반전이 반대라(가나 글리프 재사용), 거기 놓인
+        # 「름」의 ㄹ 이 뒤집혀 보였습니다.
+        out = bytearray(self.rom)
+        konarr.translate(out, konarr.TEXT, self.font)
+        recs = [i for r in konarr.LINES.values() for i in r]
+        for table in konarr.TABLES:
+            flips = {common.u16(out, table + i * 8 + 2) & 0x1000 for i in recs}
+            self.assertEqual(len(flips), 1, hex(table))
 
     def test_점_세_개는_건드리지_않는다(self):
         out = bytearray(self.rom)

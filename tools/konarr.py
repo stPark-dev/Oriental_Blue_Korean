@@ -55,7 +55,8 @@ SPRITE_COUNT = 96
 GLYPH_AT = 0x8E4508             # attr2 == 0 인 글리프
 GLYPH_END = 0x8E6700            # 여기까지가 글리프 (바로 뒤가 표)
 CELL = 16
-FONT_SIZE = 14
+FONT_SIZE = 15          # Galmuri14 는 15 에서 픽셀 격자에 맞습니다 (14 면 획이
+                        # 반 픽셀 걸쳐 옅어지고 「름」의 ㅡ 가 빠졌습니다)
 STROKE, EDGE, RIM = 3, 1, 2
 
 # 줄을 이루는 레코드. x 내림차순이 곧 읽는 순서입니다.
@@ -162,7 +163,9 @@ def render_cell(ch: str, font) -> bytearray:
     if ch in BRACKETS:                  # 낫표는 글자 쪽(「 는 오른쪽, 」 는 왼쪽)에
         x0, _, x1, _ = d.textbbox((0, 0), ch, font=font)
         x = CELL - 2 - x1 if ch == "「" else 2 - x0
-    d.text((x, (CELL - FONT_SIZE) / 2 - 1), ch, font=font, fill=255)
+    _, y0, _, y1 = d.textbbox((0, 0), ch, font=font)
+    y = (CELL - (y1 - y0)) // 2 - y0    # 둘레 한 줄까지 칸 안에 들게 가운데로
+    d.text((x, y), ch, font=font, fill=255)
     src = img.load()
     ink = [[1 if src[x, y] > 110 else 0 for x in range(CELL)] for y in range(CELL)]
     out = bytearray(CELL * CELL)
@@ -200,6 +203,16 @@ def set_x(rom: bytearray, table: int, record: int, x: int) -> None:
     """레코드의 x 만 바꿉니다 (attr1 의 반전·크기 비트는 그대로)."""
     a = table + record * 8 + 2
     common.w16(rom, a, (common.u16(rom, a) & 0xFE00) | (x & 0x1FF))
+
+
+HFLIP = 0x1000
+
+
+def set_flip(rom: bytearray, table: int, record: int, on: bool) -> None:
+    """attr1 의 좌우 반전 비트."""
+    a = table + record * 8 + 2
+    v = common.u16(rom, a)
+    common.w16(rom, a, (v | HFLIP) if on else (v & ~HFLIP & 0xFFFF))
 
 
 def set_glyph(rom: bytearray, table: int, record: int, slot: int) -> None:
@@ -249,6 +262,14 @@ def translate(rom: bytearray, texts: dict[str, str], font) -> dict:
     for rec, slot in plan.items():
         for table in TABLES:
             set_glyph(rom, table, rec, blank if slot == -1 else slot)
+    # 반전 맞추기: B 표는 모두 반전, A 표는 모두 정방향인데 원본 레코드 49 만
+    # 반대입니다 (가나 글리프를 뒤집어 재사용). 그 자리에 놓인 「름」의 ㄹ 이
+    # 뒤집혀 보여서, 표마다 다수 쪽으로 맞춥니다.
+    for table in TABLES:
+        flips = [common.u16(rom, table + r * 8 + 2) & HFLIP for r in plan]
+        on = sum(1 for f in flips if f) * 2 > len(flips)
+        for rec in plan:
+            set_flip(rom, table, rec, on)
     for rec, dx in moves.items():       # B 는 더하고, A 는 합을 지켜 뺍니다
         set_x(rom, TABLES[1], rec, sprites[rec]["x"] + dx)
         set_x(rom, TABLES[0], rec, other[rec]["x"] - dx)
