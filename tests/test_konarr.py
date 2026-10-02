@@ -20,8 +20,6 @@ ROM = os.path.join(ROOT, "rom", "baserom.gba")
 FONT = os.path.join(ROOT, "font", "Galmuri14.ttf")
 
 # 원문에서 칸 사이가 두 배로 벌어지는 자리 (그 앞까지의 글자 수)
-GAP_AFTER = {"L1": 8, "L2": 8, "L3": 3, "L4": 4,
-             "L5": 3, "L6": 7, "L7": 3, "L8": 6}
 
 
 class TextTest(unittest.TestCase):
@@ -35,12 +33,17 @@ class TextTest(unittest.TestCase):
             chars = [c for c in text if c != " "]
             self.assertLessEqual(len(chars), len(konarr.LINES[name]), name)
 
-    def test_띄어쓰기_자리가_원문과_같다(self):
-        """틈은 원문 간격에서 오므로, 번역문도 같은 자리에서 끊어야 합니다."""
-        for name, text in konarr.TEXT.items():
-            before = text.index(" ")
-            self.assertEqual(before, GAP_AFTER[name], name)
-            self.assertEqual(text.count(" "), 1, f"{name}: 띄어쓰기는 한 번만")
+    def test_낫표는_붙은_쪽은_보통_간격_반대쪽만_좁다(self):
+        xs = konarr.layout("가「나」다", 0)
+        steps = [xs[k] - xs[k + 1] for k in range(len(xs) - 1)]
+        # 가→「(좁게) 「→나(보통) 나→」(보통) 」→다(좁게)
+        self.assertEqual(steps, [konarr.BRACKET_ADV, konarr.ADV,
+                                 konarr.ADV, konarr.BRACKET_ADV])
+
+    def test_앞_세_줄은_요청한_띄어쓰기(self):
+        self.assertEqual(konarr.TEXT["L1"], "끝도없이 이어지는 푸른하늘")
+        self.assertEqual(konarr.TEXT["L2"], "끝도없이 이어지는 푸른바다를 비춰")
+        self.assertEqual(konarr.TEXT["L3"], "여기에 푸른대지가 있다")
 
     def test_레코드는_겹치지_않는다(self):
         seen: set[int] = set()
@@ -63,6 +66,17 @@ class CellTest(unittest.TestCase):
         self.assertIn(konarr.STROKE, cell)
         self.assertIn(konarr.EDGE, cell)
         self.assertNotIn(konarr.RIM, cell)     # 한글은 한 겹만 두릅니다
+
+    def test_낫표는_글자_쪽으로_붙여_그린다(self):
+        C = konarr.CELL
+        for ch, side in (("「", "right"), ("」", "left")):
+            cell = konarr.render_cell(ch, self.font)
+            xs = [i % C for i, v in enumerate(cell) if v == konarr.STROKE]
+            mid = sum(xs) / len(xs)
+            if side == "right":
+                self.assertGreater(mid, C / 2, ch)
+            else:
+                self.assertLess(mid, C / 2, ch)
 
     def test_둘레는_획에_붙어_있다(self):
         cell = konarr.render_cell("가", self.font)
@@ -109,15 +123,48 @@ class RomTest(unittest.TestCase):
         end = konarr.TABLES[1] + konarr.SPRITE_COUNT * 8
         self.assertEqual(bytes(self.rom[end:]), bytes(out[end:]))
 
-    def test_자리와_플래그는_그대로(self):
+    def test_띄어쓰기대로_다시_배치한다(self):
+        out = bytearray(self.rom)
+        konarr.translate(out, konarr.TEXT, self.font)
+        ob = konarr.read_sprites(self.rom, konarr.TABLES[1])
+        nb = konarr.read_sprites(out, konarr.TABLES[1])
+        na = konarr.read_sprites(out, konarr.TABLES[0])
+        oa = konarr.read_sprites(self.rom, konarr.TABLES[0])
+        for name, recs in konarr.LINES.items():
+            text = konarr.TEXT[name]
+            order = konarr.order_of(ob, recs)          # 원래 읽는 순서
+            chars = [c for c in text if c != " "]
+            xs = [nb[i]["x"] for i in order[:len(chars)]]
+            self.assertEqual(xs, sorted(xs, reverse=True), name)
+            self.assertTrue(all(-120 <= x <= 104 for x in xs), name)
+            # 띄어쓰기 뒤 간격이 다른 간격보다 넓다
+            gaps = [xs[k] - xs[k + 1] for k in range(len(xs) - 1)]
+            spaced, k = set(), 0
+            for c in text:
+                if c == " ":
+                    spaced.add(k - 1)
+                else:
+                    k += 1
+            for g in spaced:
+                self.assertGreater(gaps[g], max(gaps[j] for j in range(len(gaps))
+                                                if j not in spaced and
+                                                chars[j] not in "「」" and
+                                                chars[j + 1] not in "「」"), name)
+            # 두 표의 x 합(밀려 들어오는 거리)과 y 는 레코드마다 원래대로
+            for i in recs:
+                self.assertEqual(na[i]["x"] + nb[i]["x"],
+                                 oa[i]["x"] + ob[i]["x"], f"{name} {i}")
+                self.assertEqual(nb[i]["y"], ob[i]["y"])
+
+    def test_x_밖의_속성은_그대로(self):
         out = bytearray(self.rom)
         konarr.translate(out, konarr.TEXT, self.font)
         for table in konarr.TABLES:
-            a = konarr.read_sprites(self.rom, table)
-            b = konarr.read_sprites(out, table)
             for i in range(konarr.SPRITE_COUNT):
-                self.assertEqual(a[i]["x"], b[i]["x"], f"레코드 {i} x")
-                self.assertEqual(a[i]["y"], b[i]["y"], f"레코드 {i} y")
+                a = table + i * 8
+                self.assertEqual(common.u16(self.rom, a), common.u16(out, a))
+                self.assertEqual(common.u16(self.rom, a + 2) & 0xFE00,
+                                 common.u16(out, a + 2) & 0xFE00)
 
     def test_점_세_개는_건드리지_않는다(self):
         out = bytearray(self.rom)

@@ -24,13 +24,17 @@
     글자 순서 = **x 내림차순** (표에는 오른쪽 글자가 먼저 들어 있습니다)
     글리프    = `attr2` (VRAM 에 올릴 때 타일 0x30 이 더해집니다)
 
-그래서 한글화는 **`attr2` 만 바꾸면 됩니다.** 원문보다 짧은 줄은 남는 칸에
+한글화는 `attr2`(글리프)와 x 를 바꿉니다. 원문보다 짧은 줄은 남는 칸에
 빈 글리프를 넣습니다.
 
-x 는 **건드리지 않습니다.** 두 표는 같은 글을 서로 반대 방향으로 담고 있어서
-(한쪽은 x 내림차순, 다른 쪽은 오름차순) 한쪽 기준으로 다시 배치하면 다른
-쪽이 뒤집힙니다. 원문이 가나 폭에 맞춘 가변 간격이라 한글 간격이 조금
-들쭉날쭉하지만, 자리와 애니메이션은 원본 그대로입니다.
+x 는 한국어 띄어쓰기에 맞춰 다시 계산합니다 (`layout`). 원문 x 는 가나 폭의
+가변 간격이라 그대로 쓰면 줄마다 한 곳밖에 띄울 수 없어, 「끝도없이이어지는」
+처럼 붙어 보였습니다. 두 표는 같은 글을 서로 반대 방향으로 담은 두 프레임
+(한쪽에서 밀려 들어오는 애니메이션)이고, 레코드마다 **A.x + B.x 가 일정**
+합니다. 그래서 B 표에 새 x 를 쓰고 A 표는 그 합을 지켜 옮깁니다.
+
+「」 는 칸 한쪽(「 는 오른쪽, 」 는 왼쪽)에 붙여 그리고, 반대쪽 간격만
+좁힙니다.
 
 글자는 세 가지 색으로 그립니다 (팔레트는 페이드 애니메이션이 돌립니다).
 
@@ -67,19 +71,59 @@ LINES: dict[str, list[int]] = {
 }
 DOTS = [75, 76, 77]             # 「・・・」 — 건드리지 않습니다
 
-# 원문은 줄마다 한 곳만 띄어 있습니다 (칸 사이가 두 배로 벌어진 자리).
-# 번역문도 그 자리에서 끊어야 틈이 엉뚱한 데 생기지 않습니다.
-#   L1·L2 8자 뒤 · L3·L5·L7 3자 뒤 · L4 4자 뒤 · L6 7자 뒤 · L8 6자 뒤
+# 띄어쓰기는 한국어대로 합니다. 원문 간격(가나 폭)을 그대로 쓰던 때는 줄마다
+# 한 곳밖에 띄울 수 없어 「끝도없이이어지는」처럼 붙어 보였습니다. 지금은
+# 자리(x)를 다시 계산합니다 (`layout`).
 TEXT: dict[str, str] = {
-    "L1": "끝도없이이어지는 푸른하늘",
-    "L2": "끝도없이이어지는 푸른바다를비춰",
-    "L3": "여기에 푸른대지가있다",
-    "L4": "이땅에서 사는것들은",
-    "L5": "그것이 비록작디작은목숨일지라도",
-    "L6": "「푸름」의뜻을 아는존재들이다",
-    "L7": "여기는 푸른대지",
-    "L8": "모든목숨들이 살아가는땅",
+    "L1": "끝도없이 이어지는 푸른하늘",
+    "L2": "끝도없이 이어지는 푸른바다를 비춰",
+    "L3": "여기에 푸른대지가 있다",
+    "L4": "이 땅에서 사는 것들은",
+    "L5": "그것이 비록 작디작은 목숨일지라도",
+    "L6": "「푸름」의 뜻을 아는 존재들이다",
+    "L7": "여기는 푸른 대지",
+    "L8": "모든 목숨들이 살아가는 땅",
 }
+
+# 배치. x 는 B 표(0x8E6718) 기준 — 읽는 순서로 줄어듭니다. A 표는 줄마다
+# A.x + B.x 가 일정한 사본(반대쪽에서 밀려 들어오는 프레임)이라 그 합을
+# 지켜 따라 옮깁니다.
+ADV = 14                # 글자 사이
+SPACE = 8               # 띄어쓰기 자리에 더하는 간격
+BRACKET_ADV = 9         # 「 앞·」 뒤 간격 (낫표는 칸 한쪽에 붙여 그림)
+X_MIN, X_MAX = -120, 104
+BRACKETS = "「」"
+
+
+def layout(text: str, center: float) -> list[int]:
+    """띄어쓴 줄 → 글자마다 x (읽는 순서, 내림차순). 화면에 안 들면 좁힙니다."""
+    chars = [c for c in text if c != " "]
+    spaced, k = set(), 0
+    for c in text:
+        if c == " ":
+            spaced.add(k - 1)
+        else:
+            k += 1
+    for adv, space in ((ADV, SPACE), (ADV - 1, SPACE), (ADV - 1, SPACE - 2)):
+        steps = []
+        for j in range(len(chars) - 1):
+            # 「 는 칸 오른쪽, 」 는 왼쪽에 그리므로 붙은 쪽(「 다음, 」 앞)은
+            # 보통 간격이어야 겹치지 않고, 반대쪽만 좁힐 수 있습니다.
+            a, b = chars[j], chars[j + 1]
+            step = BRACKET_ADV if b == "「" or a == "」" else adv
+            steps.append(step + (space if j in spaced else 0))
+        span = sum(steps)
+        first = round(center + span / 2)
+        xs = [first]
+        for st in steps:
+            xs.append(xs[-1] - st)
+        if xs[0] > X_MAX:
+            xs = [x - (xs[0] - X_MAX) for x in xs]
+        if xs[-1] < X_MIN:
+            xs = [x + (X_MIN - xs[-1]) for x in xs]
+        if xs[0] <= X_MAX and xs[-1] >= X_MIN:
+            return xs
+    raise NarrError(f"줄이 화면에 들지 않습니다: {text}")
 
 
 class NarrError(Exception):
@@ -114,7 +158,11 @@ def render_cell(ch: str, font) -> bytearray:
     img = Image.new("L", (CELL, CELL), 0)
     d = ImageDraw.Draw(img)
     w = d.textlength(ch, font=font)
-    d.text(((CELL - w) / 2, (CELL - FONT_SIZE) / 2 - 1), ch, font=font, fill=255)
+    x = (CELL - w) / 2
+    if ch in BRACKETS:                  # 낫표는 글자 쪽(「 는 오른쪽, 」 는 왼쪽)에
+        x0, _, x1, _ = d.textbbox((0, 0), ch, font=font)
+        x = CELL - 2 - x1 if ch == "「" else 2 - x0
+    d.text((x, (CELL - FONT_SIZE) / 2 - 1), ch, font=font, fill=255)
     src = img.load()
     ink = [[1 if src[x, y] > 110 else 0 for x in range(CELL)] for y in range(CELL)]
     out = bytearray(CELL * CELL)
@@ -148,13 +196,19 @@ def write_cell(rom: bytearray, slot: int, cell: bytes) -> None:
                 rom[base + y * 4 + x // 2] = (lo & 0xF) | ((hi & 0xF) << 4)
 
 
+def set_x(rom: bytearray, table: int, record: int, x: int) -> None:
+    """레코드의 x 만 바꿉니다 (attr1 의 반전·크기 비트는 그대로)."""
+    a = table + record * 8 + 2
+    common.w16(rom, a, (common.u16(rom, a) & 0xFE00) | (x & 0x1FF))
+
+
 def set_glyph(rom: bytearray, table: int, record: int, slot: int) -> None:
     """레코드의 글리프만 바꿉니다 (자리·플래그는 그대로)."""
     common.w16(rom, table + record * 8 + 4, slot & 0x3FF)
 
 
 def translate(rom: bytearray, texts: dict[str, str], font) -> dict:
-    """줄마다 한글을 앉힙니다. `attr2` 만 고칩니다."""
+    """줄마다 한글을 앉힙니다. 글리프(`attr2`)와 자리(x)를 고칩니다."""
     sprites = read_sprites(rom, TABLES[1])
     limit = min(sprites[i]["tile"] for i in DOTS)   # 「・・・」 글리프는 남겨 둡니다
     slots: dict[str, int] = {}
@@ -171,6 +225,8 @@ def translate(rom: bytearray, texts: dict[str, str], font) -> dict:
         return slots[ch]
 
     plan: dict[int, int] = {}
+    moves: dict[int, int] = {}          # 레코드 -> B 표 x 이동량
+    other = read_sprites(rom, TABLES[0])
     for name, records in LINES.items():
         text = texts.get(name)
         if text is None:
@@ -178,8 +234,13 @@ def translate(rom: bytearray, texts: dict[str, str], font) -> dict:
         chars = [c for c in text if c != " "]
         if len(chars) > len(records):
             raise NarrError(f"{name}: 글자 {len(chars)}개 > 칸 {len(records)}개")
-        for pos, rec in enumerate(order_of(sprites, records)):
+        order = order_of(sprites, records)
+        xs0 = [sprites[i]["x"] for i in order]
+        xs = layout(text, (xs0[0] + xs0[-1]) / 2)
+        for pos, rec in enumerate(order):
             plan[rec] = slot_for(chars[pos]) if pos < len(chars) else -1
+            if pos < len(chars):
+                moves[rec] = xs[pos] - sprites[rec]["x"]
     blank = -1
     if any(v == -1 for v in plan.values()):
         blank = nxt
@@ -188,6 +249,9 @@ def translate(rom: bytearray, texts: dict[str, str], font) -> dict:
     for rec, slot in plan.items():
         for table in TABLES:
             set_glyph(rom, table, rec, blank if slot == -1 else slot)
+    for rec, dx in moves.items():       # B 는 더하고, A 는 합을 지켜 뺍니다
+        set_x(rom, TABLES[1], rec, sprites[rec]["x"] + dx)
+        set_x(rom, TABLES[0], rec, other[rec]["x"] - dx)
     return {"줄": sum(1 for n in LINES if n in texts),
             "글자": sum(1 for v in plan.values() if v != -1),
             "글리프": len(slots), "여유 칸": (limit - nxt) // 4}
