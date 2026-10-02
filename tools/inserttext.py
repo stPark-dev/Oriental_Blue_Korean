@@ -28,6 +28,7 @@ import common  # noqa: E402
 import koenc  # noqa: E402
 import kofont  # noqa: E402
 import kohook  # noqa: E402
+import kologo  # noqa: E402
 import kolz  # noqa: E402
 import kosyl  # noqa: E402
 import mktbl  # noqa: E402
@@ -40,6 +41,10 @@ from script_io import ScriptFile  # noqa: E402
 # 그 자리는 +4~+0x1D 26바이트(+0x1E 는 레벨)라 25바이트 + 종결자까지 됩니다.
 SAVE_PLACE_SITE = 0x0801550A
 SAVE_PLACE_LIMIT = 25
+
+# ROM 을 GBA 최대 크기 32MB 로 늘립니다. 원래 16MB 는 번역문으로 거의 찼습니다.
+# 문자열표는 32비트 상대 오프셋이라 0x09xxxxxx 도 가리킬 수 있습니다.
+EXPAND_TO = 0x2000000
 
 # 대화창 선택지 「はい／いいえ」(`<$15>`). 0x080204D8 이 DF3908 #3·#4 를
 # 3칸(6바이트)짜리 RAM 버퍼 0x02001D54·0x02001D5C 에 가운데 맞춰 복사하고,
@@ -56,14 +61,31 @@ class InsertError(Exception):
 
 
 class Arena:
-    """0xFF 로 채워진 자유 공간 할당기."""
+    """0xFF 로 채워진 자유 공간 할당기.
 
-    def __init__(self, rom: bytearray, regions: list[tuple[int, int]]):
+    `ext` 는 ROM 을 32MB 로 늘린 뒤쪽 16MB 입니다. 원래 자리가 모자랄 때만
+    쓰고(`alloc`), 일부러 그곳에 둘 것은 `alloc_ext` 로 받습니다.
+    """
+
+    def __init__(self, rom: bytearray, regions: list[tuple[int, int]],
+                 ext: tuple[int, int] | None = None):
         self.rom = rom
         # 뒤쪽 구간부터 씁니다. 문자열 테이블과 아카이브가 ROM 앞쪽에 몰려
         # 있어서, 뒤에 두면 상대 오프셋이 양수로 나옵니다.
         self.regions = [list(r) for r in sorted(regions, reverse=True)]
+        self.ext = list(ext) if ext else None
         self.used = 0
+
+    def alloc_ext(self, size: int, align: int = 4) -> int:
+        """늘린 자리에서 받습니다."""
+        if self.ext is None:
+            raise InsertError("늘린 자리가 없습니다")
+        start = self.ext[0] + ((-self.ext[0]) % align)
+        if start + size > self.ext[1]:
+            raise InsertError(f"늘린 자리도 모자랍니다: {size:,}바이트")
+        self.ext[0] = start + size
+        self.used += size
+        return start
 
     def alloc(self, size: int, align: int = 4, near: int | None = None,
               reach: int = 1 << 21) -> int:
@@ -78,6 +100,8 @@ class Arena:
             reg[0] = start + size
             self.used += size
             return start
+        if near is None and self.ext is not None:
+            return self.alloc_ext(size, align)
         raise InsertError(f"자유 공간 부족: {size:,}바이트를 넣을 곳이 없습니다"
                           + (f" (0x{near:08X} 에서 bl 사거리 안)"
                              if near is not None else ""))
@@ -232,8 +256,8 @@ def syllable_codes(text: str) -> dict[str, tuple[int, int]]:
 
 def build_patch(rom: bytearray, ko_dir: str, tables: list[int],
                 ttf: str, size: int, top: int,
-                ttf8: str | None = None, size8: int = 8, top8: int = 0
-                ) -> tuple[bytearray, dict]:
+                ttf8: str | None = None, size8: int = 8, top8: int = 0,
+                logo: str | None = None) -> tuple[bytearray, dict]:
     """번역문·글리프·훅을 넣은 ROM과 통계를 돌려줍니다."""
     translated = read_translations(ko_dir, tables)
     if not translated:
@@ -249,8 +273,12 @@ def build_patch(rom: bytearray, ko_dir: str, tables: list[int],
     glyphs8 = kofont.build_small_glyphs(ttf8 or ttf, ko_map, size8, top8)
 
     # 번역으로 쓸모없어진 원문 문자열 자리도 자유 공간에 더합니다.
-    arena = Arena(rom, auto_regions(rom)
-                  + dead_regions(rom, translated))
+    regions = auto_regions(rom) + dead_regions(rom, translated)
+    ext = None
+    if len(rom) < EXPAND_TO:
+        ext = (len(rom), EXPAND_TO - 4)
+        rom.extend(b"\xff" * (EXPAND_TO - len(rom)))
+    arena = Arena(rom, regions, ext)
     # 훅은 호출 지점에서 bl 사거리 안에 있어야 합니다.
     sites = [(kohook.CALL_SITE, kohook.GET_WIDE, 0, 6, False),
              (kohook.CALL_SITE_HALF, kohook.GET_HALF, 8, 6, False),
@@ -303,6 +331,13 @@ def build_patch(rom: bytearray, ko_dir: str, tables: list[int],
         choice_no = common.off_to_ptr(at)
         common.w32(rom, o, choice_no)
 
+    # 타이틀 한글 로고는 스프라이트로 얹습니다 (tools/kologo.py).
+    title_logo = None
+    if logo:
+        title_logo = kologo.install(
+            rom, lambda n, a, near: (arena.alloc(n, align=a, near=near) if near
+                                  else arena.alloc_ext(n, align=a)), logo)
+
     written = entries = 0
     for base, rows in translated.items():
         for idx, text in sorted(rows.items()):
@@ -326,6 +361,8 @@ def build_patch(rom: bytearray, ko_dir: str, tables: list[int],
         "훅": [common.off_to_ptr(a) for a in hooks],
         "메뉴 건너뛰기": skip_p,
         "선택지 아니오": choice_no,
+        "타이틀 로고": title_logo,
+        "늘린 자리 남음": (arena.ext[1] - arena.ext[0]) if arena.ext else 0,
         "색인": common.off_to_ptr(slot_at),
         "글리프": common.off_to_ptr(glyph_at),
         "글리프8": common.off_to_ptr(glyph8_at),
@@ -346,6 +383,8 @@ def main() -> int:
                     help="8행 렌더러(메뉴)용 8×8 한글 TTF")
     ap.add_argument("--size8", type=int, default=8)
     ap.add_argument("--top8", type=int, default=0)
+    ap.add_argument("--logo", default=None,
+                    help="타이틀 한글 로고 그림 (스프라이트로 얹음)")
     args = ap.parse_args()
 
     rom = common.load(args.rom)
@@ -361,7 +400,7 @@ def main() -> int:
         rom, stats = build_patch(rom, args.ko, tables, args.ttf,
                                  args.size, args.top,
                                  args.ttf8 if os.path.exists(args.ttf8) else None,
-                                 args.size8, args.top8)
+                                 args.size8, args.top8, args.logo)
     except InsertError as e:
         print(f"[!] {e}", file=sys.stderr)
         return 1
@@ -371,13 +410,18 @@ def main() -> int:
     print(f"  문자열           {stats['문자열 바이트']:,}바이트")
     print("  훅               " + " ".join(f"0x{h:08X}" for h in stats['훅']))
     print(f"  메뉴 건너뛰기    0x{stats['메뉴 건너뛰기']:08X}")
+    if stats["타이틀 로고"]:
+        t = stats["타이틀 로고"]
+        print(f"  타이틀 로고      스프라이트 {t['조각']}조각 · 타일 {t['타일']}개 · "
+              f"{t['바이트']:,}바이트 (훅 0x{t['훅']:08X})")
     print(f"  색인 테이블      0x{stats['색인']:08X} "
           f"({kofont.SYLLABLES * 2:,}바이트)")
     print(f"  글리프 16×16     0x{stats['글리프']:08X} "
           f"({(stats['음절'] + 1) * 32:,}바이트)")
     print(f"  글리프 8×8       0x{stats['글리프8']:08X} "
           f"({(stats['음절'] + 1) * 8:,}바이트)")
-    print(f"  남은 자유 공간   {stats['남은 자유 공간']:,}바이트")
+    print(f"  남은 자유 공간   {stats['남은 자유 공간']:,}바이트 "
+          f"(+ 늘린 자리 {stats['늘린 자리 남음']:,}바이트)")
 
     common.save(args.out, bytes(rom))
     print(f"\n출력: {args.out}  SHA-1 {common.digests(rom)['sha1']}")

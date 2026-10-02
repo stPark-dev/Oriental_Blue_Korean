@@ -227,6 +227,48 @@ class RomPatchTest(unittest.TestCase):
         self.assertEqual(bytes(out[o:o + 4]), bytes(self.rom[o:o + 4]))
         self.assertIsNone(stats["선택지 아니오"])
 
+    def test_로고를_주면_OAM_전송에_훅을_건다(self):
+        import kologo
+        logo = os.path.join(ROOT, "art", "title_ko.png")
+        if not os.path.exists(logo):
+            self.skipTest("art/title_ko.png 없음")
+        with tempfile.TemporaryDirectory() as tmp:
+            ko = os.path.join(tmp, "ko")
+            os.makedirs(ko)
+            with open(os.path.join(ko, f"t{TABLE:06X}.txt"), "w",
+                      encoding="utf-8", newline="\n") as f:
+                f.write(f"# 테스트\n\n## {INDEX:04d} @0x000000\n한글\n\n")
+            out, stats = inserttext.build_patch(bytearray(self.rom), ko,
+                                                [TABLE], TTF, 14, 2,
+                                                logo=logo)
+        o = kologo.SITE - common.ROM_BASE
+        self.assertEqual(bytes(out[o:o + 4]),
+                         thumb.bl_bytes(kologo.SITE, stats["타이틀 로고"]["훅"]))
+        # 로고 자료는 32MB 로 늘린 뒤쪽 16MB 에 둡니다.
+        self.assertEqual(len(out), inserttext.EXPAND_TO)
+        self.assertGreaterEqual(stats["타이틀 로고"]["자료"],
+                                common.ROM_BASE + 0x1000000)
+
+    def test_ROM_은_32MB_로_늘고_늘린_자리는_비어_있다(self):
+        out, stats = self._build("한글")
+        self.assertEqual(len(out), inserttext.EXPAND_TO)
+        tail = bytes(out[0x1000000:])
+        self.assertEqual(tail, b"\xff" * len(tail))
+        self.assertEqual(stats["늘린 자리 남음"], 0x1000000 - 4)
+
+    def test_원래_자리가_모자라면_늘린_자리를_쓴다(self):
+        arena = inserttext.Arena(bytearray(16), [(0, 8)], ext=(100, 200))
+        self.assertEqual(arena.alloc(8, align=1), 0)
+        self.assertEqual(arena.alloc(8, align=1), 100)
+        self.assertEqual(arena.alloc_ext(4, align=4), 108)
+
+    def test_로고가_없으면_OAM_전송은_그대로(self):
+        import kologo
+        out, stats = self._build("한글")
+        o = kologo.SITE - common.ROM_BASE
+        self.assertEqual(bytes(out[o:o + 4]), kologo.SITE_ORIG)
+        self.assertIsNone(stats["타이틀 로고"])
+
     def test_기록_장소_이름_복사_한도를_넓힌다(self):
         out, _ = self._build("한글")
         o = inserttext.SAVE_PLACE_SITE - common.ROM_BASE

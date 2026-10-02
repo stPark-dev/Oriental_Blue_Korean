@@ -67,6 +67,19 @@ class EncodingTest(unittest.TestCase):
             ["ldrb r3, [r6, #1]", "strb r3, [r0, #0xf]", "ldrh r2, [r1, r0]",
              "ldrb r2, [r1, r0]", "ldr r1, [r2, #8]", "str r1, [r2, #4]"])
 
+    def test_하프워드_즉시값과_swi(self):
+        self.assertEqual(
+            self.asm(lambda a: (a.ldrh_imm(1, 2, 6), a.strh_imm(3, 4, 62),
+                                a.swi(0x12))),
+            ["ldrh r1, [r2, #6]", "strh r3, [r4, #0x3e]", "svc #0x12"])
+
+    def test_하프워드_즉시값_범위(self):
+        a = thumb.Asm(BASE)
+        with self.assertRaises(thumb.AsmError):
+            a.strh_imm(0, 1, 3)          # 홀수
+        with self.assertRaises(thumb.AsmError):
+            a.ldrh_imm(0, 1, 64)         # 62 까지
+
     def test_분기(self):
         out = self.asm(lambda a: (a.b("end"), a.beq("end"), a.movs(0, 0),
                                   a.mark("end"), a.bx(14)))

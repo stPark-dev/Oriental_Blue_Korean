@@ -128,6 +128,19 @@ class Asm:
     def ldrb_reg(self, rd: int, rn: int, rm: int) -> None:
         self._e(0x5C00 | (rm << 6) | (rn << 3) | rd)
 
+    def ldrh_imm(self, rd: int, rn: int, off: int) -> None:
+        _chk(off % 2 == 0 and 0 <= off <= 62, "ldrh 범위")
+        self._e(0x8800 | ((off >> 1) << 6) | (rn << 3) | rd)
+
+    def strh_imm(self, rd: int, rn: int, off: int) -> None:
+        _chk(off % 2 == 0 and 0 <= off <= 62, "strh 범위")
+        self._e(0x8000 | ((off >> 1) << 6) | (rn << 3) | rd)
+
+    def swi(self, n: int) -> None:
+        """BIOS 호출 (capstone 은 svc 로 보여 줍니다)."""
+        _chk(0 <= n <= 0xFF, "swi 범위")
+        self._e(0xDF00 | n)
+
     def ldr_imm(self, rd: int, rn: int, off: int) -> None:
         _chk(off % 4 == 0 and 0 <= off <= 124, "ldr 범위")
         self._e(0x6800 | ((off >> 2) << 6) | (rn << 3) | rd)

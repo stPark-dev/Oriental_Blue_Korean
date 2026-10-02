@@ -409,6 +409,49 @@ def render_wordmark(tiles: bytearray, logo: str) -> dict:
             "크기": (width, height), "밀기": (dx, dy)}
 
 
+def blank_wordmark(tiles: bytearray) -> dict:
+    """띠의 일본어 로고 자리를 돌벽으로 메우기만 합니다 (한글은 kologo 가 OBJ 로)."""
+    canvas, known = band_canvas(tiles)
+    wall = restore_wall(canvas, known)
+    painted = 0
+    for r, c, idx, hf, vf in band_cells():
+        if idx not in PAINTABLE:
+            continue
+        _write_cell(tiles, wall, r, c, idx, hf, vf)
+        painted += 1
+    painted += _write_mirrors(tiles, wall)
+    return {"칠한 타일": painted}
+
+
+def cover_cells(tiles: bytes) -> list[tuple[int, int, bytes]]:
+    """스프라이트로 덮어야 할 띠 칸: (화면 x, 화면 y, 돌벽 64화소).
+
+    못 칠하는 칸 중 원본 로고의 획이 남는 곳입니다.
+
+    - 아래 줄(띠 2행부터)의 물결 창 타일 `0x01`–`0x0E` — 원본 끝 획이
+      물결을 비치게 파낸 자리라, 칠하면 화면 곳곳의 물결이 같이 바뀝니다
+    - `0x50` — 장식 줄과 함께 쓰는 칸
+    - 15·16열 거울 쌍 — 한 타일을 뒤집어 쓰므로 양쪽이 같이 맞을 수 없습니다
+    - 아래 줄 양 끝(1·30열)의 `0x33` — 띠 가장자리 곳곳에 쓰여 흰 점 넷이 남습니다
+
+    화면 x 는 열×8-8 (0·31열은 화면 밖), y 는 띠 행×8 (`BAND_ROWS`).
+    """
+    canvas, known = band_canvas(tiles)
+    wall = restore_wall(canvas, known)
+    out = []
+    for r, c, idx, _hf, _vf in band_cells():
+        if c in (0, 31):
+            continue
+        if not ((idx < TILE_BASE and r >= 2) or idx == 0x50
+                or idx in MIRROR_TILES
+                or (idx == 0x33 and r >= 5 and c in (1, 30))):
+            continue
+        px = bytes(wall[(r * 8 + y) * W + c * 8 + x]
+                   for y in range(8) for x in range(8))
+        out.append((c * 8 - 8, r * 8, px))
+    return out
+
+
 def clear_overlay(tiles: bytearray) -> int:
     """로고 위에 덮여 나오던 원본 장식 조각을 투명하게 지웁니다."""
     for idx in OVERLAY_TILES:
@@ -539,12 +582,16 @@ def build_intro(rom: bytes, logo: str):
 
 # --- 빌드 ------------------------------------------------------------------
 
-def build(rom: bytes, logo: str, font: str):
-    """(재압축한 타일셋, 통계). ROM 은 건드리지 않습니다."""
+def build(rom: bytes, logo: str, font: str, sprite: bool = False):
+    """(재압축한 타일셋, 통계). ROM 은 건드리지 않습니다.
+
+    `sprite` 면 띠와 부제 판은 비우기만 합니다 — 로고·부제는 kologo 가
+    스프라이트로 얹습니다.
+    """
     tiles = load_tiles(rom)
-    stats = render_wordmark(tiles, logo)
+    stats = blank_wordmark(tiles) if sprite else render_wordmark(tiles, logo)
     stats["지운 장식"] = clear_overlay(tiles)
-    stats.update(render_subtitle(tiles, font))
+    stats.update(render_subtitle(tiles, font, "" if sprite else SUBTITLE_TEXT))
     packed = gbalz.compress(bytes(tiles))
     if len(packed) > TILES_LEN:
         raise TitleError(
@@ -554,9 +601,9 @@ def build(rom: bytes, logo: str, font: str):
     return packed, stats
 
 
-def apply(rom: bytearray, logo: str, font: str) -> dict:
+def apply(rom: bytearray, logo: str, font: str, sprite: bool = False) -> dict:
     """ROM 을 제자리에서 고칩니다 (타이틀 + 오프닝 로고)."""
-    packed, stats = build(rom, logo, font)
+    packed, stats = build(rom, logo, font, sprite)
     rom[TILES_AT:TILES_AT + len(packed)] = packed
     ipacked, istats = build_intro(rom, logo)
     rom[INTRO_AT:INTRO_AT + len(ipacked)] = ipacked
@@ -570,6 +617,8 @@ def main() -> int:
     ap.add_argument("-o", "--out", help="따로 저장할 경로")
     ap.add_argument("--logo", default="art/title_ko.png")
     ap.add_argument("--font", default="font/Galmuri7.ttf")
+    ap.add_argument("--sprite", action="store_true",
+                    help="띠·부제 판은 비우기만 (로고는 kologo 스프라이트)")
     args = ap.parse_args()
 
     for p in (args.logo, args.font):
@@ -578,17 +627,22 @@ def main() -> int:
             return 1
     rom = bytearray(common.load(args.rom))
     try:
-        stats = apply(rom, args.logo, args.font)
+        stats = apply(rom, args.logo, args.font, args.sprite)
     except TitleError as e:
         print(f"[!] {e}")
         return 1
     common.save(args.out or args.rom, bytes(rom))
-    print(f"  타이틀 로고    {stats['크기'][0]}x{stats['크기'][1]} · "
-          f"칠한 타일 {stats['칠한 타일']}개 · "
-          f"잘린 화소 {stats['잘린 화소']}/{stats['글자 화소']} "
-          f"({stats['잘린 화소'] / stats['글자 화소'] * 100:.1f}%)")
-    print(f"  부제           「{SUBTITLE_TEXT}」 {stats['부제 화소']}화소 · "
-          f"덮개 장식 {stats['지운 장식']}타일 지움")
+    if args.sprite:
+        print(f"  타이틀 띠      일본어 로고 자리 메움 · 칠한 타일 "
+              f"{stats['칠한 타일']}개 · 덮개 장식 {stats['지운 장식']}타일 지움 "
+              f"(로고는 스프라이트)")
+    else:
+        print(f"  타이틀 로고    {stats['크기'][0]}x{stats['크기'][1]} · "
+              f"칠한 타일 {stats['칠한 타일']}개 · "
+              f"잘린 화소 {stats['잘린 화소']}/{stats['글자 화소']} "
+              f"({stats['잘린 화소'] / stats['글자 화소'] * 100:.1f}%)")
+        print(f"  부제           「{SUBTITLE_TEXT}」 {stats['부제 화소']}화소 · "
+              f"덮개 장식 {stats['지운 장식']}타일 지움")
     print(f"  타일셋         {stats['압축']:,}바이트 "
           f"(자리 {TILES_LEN:,}, 여유 {stats['여유']:,})")
     print(f"  오프닝 로고    {stats['오프닝 크기'][0]}x{stats['오프닝 크기'][1]} · "

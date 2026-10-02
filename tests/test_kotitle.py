@@ -160,6 +160,34 @@ class RomTest(unittest.TestCase):
         raw, _ = gbalz.decompress(bytes(out), kotitle.TILES_AT)
         self.assertEqual(raw, gbalz.decompress(bytes(packed) + b"\x00" * 8, 0)[0])
 
+    def test_스프라이트_모드는_띠를_돌벽으로만_메운다(self):
+        # 로고는 kologo 가 OBJ 로 얹습니다. 띠의 칠할 칸에는 파낸 자리
+        # (투명)·흰 테두리가 남지 않아야 합니다.
+        out = bytearray(self.rom)
+        stats = kotitle.apply(out, LOGO, FONT, sprite=True)
+        tiles = kotitle.load_tiles(out)
+        for idx in kotitle.PAINTABLE:
+            px = kotitle.tile_pixels(tiles, idx)
+            self.assertNotIn(kotitle.TRANSPARENT, px, f"0x{idx:03X}")
+            self.assertNotIn(kotitle.WHITE, px, f"0x{idx:03X}")
+        self.assertEqual(stats["부제 화소"], 0)
+
+    def test_덮개_칸은_못_칠하는_칸뿐이고_돌벽만_담는다(self):
+        cells = kotitle.cover_cells(kotitle.load_tiles(self.rom))
+        self.assertGreater(len(cells), 0)
+        for sx, sy, px in cells:
+            self.assertEqual(len(px), 64)
+            self.assertNotIn(kotitle.TRANSPARENT, px)
+            self.assertNotIn(kotitle.WHITE, px)
+            self.assertEqual((sx % 8, sy % 8), (0, 0))
+            self.assertTrue(0 <= sx < 240 and 0 <= sy < 64)
+        # 물결 창 타일(0x01~0x0E)로 된 아래 두 줄 끝 획과 거울 쌍이 들어갑니다
+        pos = {(sx, sy) for sx, sy, _ in cells}
+        self.assertIn((28 * 8 - 8, 6 * 8), pos)          # 오른쪽 끝 획
+        self.assertIn((15 * 8 - 8, 4 * 8), pos)          # 거울 쌍
+        self.assertIn((16 * 8 - 8, 5 * 8), pos)
+        self.assertIn((30 * 8 - 8, 6 * 8), pos)          # 오른쪽 끝 흰 점
+
     def test_두_블록_밖_롬은_그대로다(self):
         out = bytearray(self.rom)
         kotitle.apply(out, LOGO, FONT)

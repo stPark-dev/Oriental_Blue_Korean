@@ -43,17 +43,47 @@ def _bps_read_num(data: bytes, pos: int) -> tuple[int, int]:
         value += shift
 
 
-def bps_make(source: bytes, target: bytes, metadata: bytes = b"") -> bytes:
-    """SourceRead / TargetRead 만 사용하는 단순 인코더.
+RUN_MIN = 32   # 이만큼 같은 바이트가 이어지면 TargetCopy 로 늘립니다
 
-    변경되지 않은 구간은 SourceRead 한 번으로 압축되므로, 일반적인 ROM 번역
-    패치(전체의 극히 일부만 수정)에서는 충분히 작은 결과가 나옵니다.
+
+def bps_make(source: bytes, target: bytes, metadata: bytes = b"") -> bytes:
+    """SourceRead / TargetRead / TargetCopy 인코더.
+
+    변경되지 않은 구간은 SourceRead 한 번, 바뀐 구간은 TargetRead 로 담습니다.
+    바뀐 구간 안에서 같은 바이트가 `RUN_MIN` 이상 이어지면 첫 바이트만 담고
+    나머지는 바로 앞 바이트를 겹쳐 복사(TargetCopy)합니다 — ROM 을 32MB 로
+    늘린 뒤쪽 `0xFF` 16MB 가 몇 바이트로 줄어듭니다.
     """
     out = bytearray(b"BPS1")
     out += _bps_num(len(source))
     out += _bps_num(len(target))
     out += _bps_num(len(metadata))
     out += metadata
+
+    dst_rel = 0
+
+    def target_read(a: int, b: int) -> None:
+        if b > a:
+            out.extend(_bps_num(((b - a - 1) << 2) | 1))
+            out.extend(target[a:b])
+
+    def changed(a: int, b: int) -> None:
+        nonlocal dst_rel
+        k = a
+        while k < b:
+            r = k
+            while r < b and target[r] == target[k]:
+                r += 1
+            if r - k >= RUN_MIN:
+                target_read(a, k + 1)              # 첫 바이트까지 담고
+                delta = k - dst_rel                # 그 바이트를 겹쳐 복사
+                out.extend(_bps_num(((r - k - 2) << 2) | 3))
+                out.extend(_bps_num((abs(delta) << 1) | (delta < 0)))
+                dst_rel = k + (r - k - 1)
+                a = k = r
+            else:
+                k = r
+        target_read(a, b)
 
     i = 0
     n = len(target)
@@ -64,12 +94,10 @@ def bps_make(source: bytes, target: bytes, metadata: bytes = b"") -> bytes:
             if same and j >= len(source):
                 break
             j += 1
-        length = j - i
         if same:
-            out += _bps_num(((length - 1) << 2) | 0)  # SourceRead
+            out += _bps_num(((j - i - 1) << 2) | 0)  # SourceRead
         else:
-            out += _bps_num(((length - 1) << 2) | 1)  # TargetRead
-            out += target[i:j]
+            changed(i, j)
         i = j
 
     out += (zlib.crc32(source) & 0xFFFFFFFF).to_bytes(4, "little")
@@ -120,10 +148,18 @@ def bps_apply(source: bytes, patch: bytes) -> bytes:
                     src_rel += 1
             else:
                 dst_rel += delta
-                for _ in range(length):
-                    target[out_off] = target[dst_rel]
-                    out_off += 1
-                    dst_rel += 1
+                gap = out_off - dst_rel
+                if gap >= length:                   # 겹치지 않으면 한 번에
+                    target[out_off:out_off + length] = \
+                        target[dst_rel:dst_rel + length]
+                elif gap == 1:                      # 바로 앞 바이트 늘이기
+                    target[out_off:out_off + length] = \
+                        bytes([target[dst_rel]]) * length
+                else:
+                    for k in range(length):
+                        target[out_off + k] = target[dst_rel + k]
+                out_off += length
+                dst_rel += length
     return bytes(target)
 
 

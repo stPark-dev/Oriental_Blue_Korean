@@ -34,6 +34,22 @@ class BpsRoundTripTest(unittest.TestCase):
         tgt = bytes(SRC[:8192])
         self.assertEqual(self._round(tgt), tgt)
 
+    def test_같은_바이트가_길게_이어지면_패치가_작다(self):
+        # 32MB 로 늘린 뒤쪽 16MB 는 거의 0xFF 입니다. 날것으로 담으면
+        # 패치가 ROM 만큼 커집니다.
+        tgt = bytes(SRC) + b"\xFF" * (1 << 20)
+        p = patch.bps_make(SRC, tgt)
+        self.assertLess(len(p), 200)
+        self.assertEqual(patch.bps_apply(SRC, p), tgt)
+
+    def test_바뀐_구간_가운데의_연속도_줄인다(self):
+        tgt = bytearray(SRC)
+        tgt[1000:5000] = b"\x00" * 4000
+        tgt[5000:5003] = b"abc"
+        p = patch.bps_make(SRC, bytes(tgt))
+        self.assertLess(len(p), 200)
+        self.assertEqual(patch.bps_apply(SRC, p), bytes(tgt))
+
     def test_늘어난_자리에_내용이_있어도_돌아온다(self):
         tgt = bytes(SRC) + bytes(range(256)) * 4
         self.assertEqual(self._round(tgt), tgt)
