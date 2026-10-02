@@ -52,6 +52,15 @@ MENU_SKIP_RESUME = 0x0801C732      # 남은 칸(sb)을 줄이는 명령 바로 �
 MENU_CUSTOM_FROM = 0x51F
 
 LEAD_BANKS = (3, 4)
+
+# 이름 입력 지우기 (0x0804AAA0): 끝 단위가 2바이트면 len-2 에 종결자를 씁니다.
+NAME_DELETE_SITE = 0x0804AAD6
+NAME_DELETE_ORIG = bytes.fromhex("40190238")     # adds r0,r0,r5 / subs r0,#2
+
+# 이름 입력 커서 칸 (0x0804A958) 의 폭 호출.
+WIDTH_FUNC = 0x0801B874
+NAME_WIDTH_SITE = 0x0804A968
+NAME_WIDTH_ORIG = bytes.fromhex("D0F784FF")     # bl 0x0801B874
 TRAIL_BANK = 5
 PARAM_FIRST = 0x09             # 0x00·0x08 을 피한 첫 파라미터
 PER_BANK = 0x100 - PARAM_FIRST  # 뱅크당 247개
@@ -223,6 +232,99 @@ def build_menu_skip(at: int) -> bytes:
     a.cmp_reg(5, 0)
     a.bx(14)
     return a.assemble()
+
+
+def build_name_delete(at: int) -> bytes:
+    """이름 입력 지우기에서 한글 음절을 통째로 지우는 코드.
+
+    `0x0804AAD6` 에서 `bl` 로 들어옵니다. r0 = 이름 바이트 수, r5 = 이름,
+    r4 = 끝 단위(2바이트 코드). 돌려주는 r0 에 호출 쪽이 종결자를 씁니다.
+
+        끝 단위가 뒤 코드이고 그 앞 2바이트가 앞 코드 -> 이름 + len - 4
+        그 밖                                       -> 이름 + len - 2 (원래대로)
+
+    r1·r2 만 더 씁니다 — 호출 쪽은 돌아와 r1 에 0 을 넣고 끝납니다.
+    """
+    a = thumb.Asm(at)
+    a.adds(0, 0, 5)
+    a.subs_imm8(0, 2)
+    a.ldr_pool(1, trail_code(0))
+    a.cmp_reg(4, 1)
+    a.bcond("cc", "done")
+    a.ldr_pool(1, trail_code(TRAIL_COUNT - 1))
+    a.cmp_reg(4, 1)
+    a.bhi("done")
+    a.subs(1, 0, 5)                      # 뒤 코드 앞에 2바이트가 있어야
+    a.cmp_imm(1, 2)
+    a.blt("done")
+    a.subs_imm3(2, 0, 2)
+    a.ldrb_imm(1, 2, 0)
+    a.cmp_imm(1, LEAD_BANKS[0])
+    a.bcond("cc", "done")
+    a.cmp_imm(1, LEAD_BANKS[-1])
+    a.bhi("done")
+    a.adds_imm3(0, 2, 0)
+    a.mark("done")
+    a.bx(14)
+    return a.assemble()
+
+
+def build_name_width(at: int) -> bytes:
+    """화면 칸으로 센 이름 폭 — 한글 음절은 전각 한 칸(2).
+
+    `0x0801B874` 와 같이 이스케이프(01–05 xx)·전각(0x80–)은 2, 반각은 1 로
+    세되, 앞 코드(뱅크 3·4) 바로 뒤의 뒤 코드(뱅크 5)는 0 으로 셉니다.
+    r0 = 문자열, 돌려주는 r0 = 폭. r1–r3 은 원래 함수처럼 덮어씁니다.
+    """
+    a = thumb.Asm(at)
+    a.push([4], lr=True)
+    a.adds_imm3(2, 0, 0)                 # r2 = 읽는 자리
+    a.movs(0, 0)                         # r0 = 폭
+    a.movs(3, 0)                         # r3 = 바로 앞 이스케이프 뱅크
+    a.mark("loop")
+    a.ldrb_imm(4, 2, 0)
+    a.cmp_imm(4, 0)
+    a.beq("end")
+    a.subs_imm3(1, 4, 1)
+    a.cmp_imm(1, 4)
+    a.bhi("single")
+    a.adds_imm8(2, 2)                    # 이스케이프 두 바이트
+    a.adds_imm8(1, 1)
+    a.cmp_imm(1, 5)
+    a.bne("count2")
+    a.cmp_imm(3, LEAD_BANKS[0])
+    a.bcond("cc", "count2")
+    a.cmp_imm(3, LEAD_BANKS[-1])
+    a.bhi("count2")
+    a.movs(3, 0)                         # 음절의 뒤 코드 — 칸 없음
+    a.b("loop")
+    a.mark("count2")
+    a.adds_imm8(0, 2)
+    a.adds_imm3(3, 1, 0)
+    a.b("loop")
+    a.mark("single")
+    a.adds_imm8(2, 1)
+    a.movs(3, 0)
+    a.lsls(1, 4, 24)
+    a.bcond("mi", "wide")
+    a.adds_imm8(0, 1)
+    a.b("loop")
+    a.mark("wide")
+    a.adds_imm8(0, 2)
+    a.b("loop")
+    a.mark("end")
+    a.pop([4], pc=True)
+    return a.assemble()
+
+
+def name_width_site_bytes(at: int) -> bytes:
+    """`0x0804A968` 의 `bl 0x0801B874` 를 대신할 `bl at`."""
+    return thumb.bl_bytes(NAME_WIDTH_SITE, at)
+
+
+def name_delete_site_bytes(at: int) -> bytes:
+    """`0x0804AAD6` 의 adds·subs 네 바이트를 대신할 `bl at`."""
+    return thumb.bl_bytes(NAME_DELETE_SITE, at)
 
 
 def menu_skip_site_bytes(at: int) -> bytes:

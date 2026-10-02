@@ -85,6 +85,9 @@ flow: ## 창 폭을 넘긴 줄 쪼개기 안전망 (GROW=8 WRITE=1 로 반영)
 menu: ## 메뉴 항목이 제 칸(VM 레코드 칸 수)에 들어가는지
 	@$(PYTHON) tools/komenu.py $(ROM)
 
+name: ## 이름 입력판 한글 배치가 번역 파일과 같은지 (WRITE=1 이면 채움)
+	@$(PYTHON) tools/koname.py $(ROM) $(if $(WRITE),--write)
+
 fit: ## 창 폭을 넘긴 줄 목록 (COUNT=200 으로 개수 조절)
 	@$(PYTHON) tools/kofit.py list --count $(or $(COUNT),100)
 
@@ -143,4 +146,4 @@ clean: ## 빌드 산출물 삭제
 	@rm -rf $(BUILD)/*.gba $(BUILD)/*.tsv $(BUILD)/*.png $(BUILD)/*.log
 	@echo "정리 완료"
 
-.PHONY: help hooks test check width menu flow fit prog gloss same sheet audit shiri scan-ptr scan-text scan-lz tbl tbl-check strings vm grid grid-find script dump font-orig font insert title narr patch build verify run clean
+.PHONY: help hooks test check width menu name flow fit prog gloss same sheet audit shiri scan-ptr scan-text scan-lz tbl tbl-check strings vm grid grid-find script dump font-orig font insert title narr patch build verify run clean

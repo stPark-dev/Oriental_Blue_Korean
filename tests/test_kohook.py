@@ -185,5 +185,100 @@ class MenuSkipTest(unittest.TestCase):
              MD.disasm(b, kohook.MENU_SKIP_SITE)]
         self.assertEqual(d[0], f"bl #{AT:#x}")
 
+class NameDeleteTest(unittest.TestCase):
+    """이름 입력 지우기(0x0804AAA0)는 2바이트 단위로 자릅니다.
+
+    한글 음절(앞 코드 + 뒤 코드)은 4바이트라 뒤 코드만 지워지고 앞 코드가
+    남았습니다. 끝 단위가 뒤 코드이고 그 앞 2바이트가 앞 코드면 4바이트를
+    자릅니다.
+    """
+
+    def setUp(self):
+        if MD is None:
+            self.skipTest("capstone 없음")
+        self.code = kohook.build_name_delete(AT)
+        self.dis = [f"{i.mnemonic} {i.op_str}".strip()
+                    for i in MD.disasm(self.code, AT)]
+        self.pool = {int.from_bytes(self.code[i:i + 4], "little")
+                     for i in range(0, len(self.code) - 3, 4)}
+
+    def test_원래_두_명령으로_시작한다(self):
+        # 0x0804AAD6 adds r0, r0, r5 / subs r0, #2 를 대신합니다.
+        self.assertEqual(self.dis[:2], ["adds r0, r0, r5", "subs r0, #2"])
+
+    def test_끝_단위가_뒤_코드일_때만(self):
+        self.assertIn(kohook.trail_code(0), self.pool)
+        self.assertIn(kohook.trail_code(kohook.TRAIL_COUNT - 1), self.pool)
+        self.assertIn("cmp r4, r1", self.dis)
+
+    def test_이름_맨_앞을_넘어_읽지_않는다(self):
+        self.assertIn("subs r1, r0, r5", self.dis)
+        self.assertIn("cmp r1, #2", self.dis)
+
+    def test_앞_코드면_두_바이트_더_자른다(self):
+        self.assertIn("subs r2, r0, #2", self.dis)
+        self.assertIn("ldrb r1, [r2]", self.dis)
+        self.assertIn(f"cmp r1, #{kohook.LEAD_BANKS[0]}", self.dis)
+        self.assertIn(f"cmp r1, #{kohook.LEAD_BANKS[-1]}", self.dis)
+        self.assertIn("adds r0, r2, #0", self.dis)
+
+    def test_r0_r1_r2_만_쓰고_돌아간다(self):
+        self.assertFalse(any(d.startswith(("push", "pop")) for d in self.dis))
+        self.assertEqual(self.dis[-1] if self.dis[-1] == "bx lr" else
+                         [d for d in self.dis if d.startswith("bx")][-1],
+                         "bx lr")
+
+    def test_호출_지점은_원래_두_명령_자리(self):
+        b = kohook.name_delete_site_bytes(AT)
+        self.assertEqual(len(b), 4)
+        d = [f"{i.mnemonic} {i.op_str}" for i in
+             MD.disasm(b, kohook.NAME_DELETE_SITE)]
+        self.assertEqual(d[0], f"bl #{AT:#x}")
+        self.assertEqual(kohook.NAME_DELETE_ORIG, bytes.fromhex("40190238"))
+
+
+class NameWidthTest(unittest.TestCase):
+    """이름 입력 커서 칸(0x0804A958)은 이름 폭과 같은 번호의 반각 칸입니다.
+
+    폭(0x0801B874)은 한글 음절을 4로 세지만 화면에선 전각 한 칸(2)이라
+    커서가 음절마다 한 칸씩 밀렸습니다. 커서 쪽 호출만 앞 코드 뒤의
+    뒤 코드를 0 으로 세는 폭으로 바꿉니다. 입력 한도(0x0804AC3E)는 그대로.
+    """
+
+    def setUp(self):
+        if MD is None:
+            self.skipTest("capstone 없음")
+        self.code = kohook.build_name_width(AT)
+        self.dis = [f"{i.mnemonic} {i.op_str}".strip()
+                    for i in MD.disasm(self.code, AT)]
+
+    def test_원래_호출은_폭_함수(self):
+        d = [f"{i.mnemonic} {i.op_str}" for i in
+             MD.disasm(kohook.NAME_WIDTH_ORIG, kohook.NAME_WIDTH_SITE)]
+        self.assertEqual(d[0], f"bl #{kohook.WIDTH_FUNC:#x}")
+
+    def test_이스케이프는_두_바이트_전각은_2_반각은_1(self):
+        self.assertIn("cmp r1, #4", self.dis)          # (코드-1) <= 4 -> 이스케이프
+        self.assertIn("adds r0, #2", self.dis)
+        self.assertIn("adds r0, #1", self.dis)
+
+    def test_앞_코드_뒤의_뒤_코드는_0(self):
+        self.assertIn("cmp r1, #5", self.dis)
+        self.assertIn(f"cmp r3, #{kohook.LEAD_BANKS[0]}", self.dis)
+        self.assertIn(f"cmp r3, #{kohook.LEAD_BANKS[-1]}", self.dis)
+
+    def test_레지스터를_지키고_돌아간다(self):
+        self.assertEqual(self.dis[0], "push {r4, lr}")
+        self.assertEqual(self.dis[-1] if self.dis[-1].startswith("pop") else
+                         [d for d in self.dis if d.startswith("pop")][-1],
+                         "pop {r4, pc}")
+
+    def test_호출_지점_바이트(self):
+        b = kohook.name_width_site_bytes(AT)
+        d = [f"{i.mnemonic} {i.op_str}" for i in
+             MD.disasm(b, kohook.NAME_WIDTH_SITE)]
+        self.assertEqual(d[0], f"bl #{AT:#x}")
+
+
 if __name__ == "__main__":
     unittest.main()

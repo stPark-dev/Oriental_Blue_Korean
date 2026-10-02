@@ -30,6 +30,7 @@ import kofont  # noqa: E402
 import kohook  # noqa: E402
 import kologo  # noqa: E402
 import kolz  # noqa: E402
+import koname  # noqa: E402
 import kosyl  # noqa: E402
 import mktbl  # noqa: E402
 import obtext  # noqa: E402
@@ -54,6 +55,16 @@ EXPAND_TO = 0x2000000
 CHOICE_NO_LITERAL = 0x08020634
 CHOICE_NO_RAM = 0x02001D5C
 CHOICE_TABLE, CHOICE_NO_INDEX = 0xDF3908, 4
+
+# 이름 입력에서 글자 덧붙이기(0x0804AC0C). 판 글자를 sp 4바이트에 받고 sp+4 에
+# 이름을 복사한 뒤 이어 붙입니다. 한글 음절은 4바이트라 종결자가 sp+4 로 넘쳐
+# 이름 복사에 덮이고, 이어 붙이기가 제 꼬리를 끝없이 베꼈습니다. 프레임을
+# 0x20 으로 늘려 글자 8바이트, 이름 24바이트(12+4+종결자)를 줍니다.
+NAME_ADD_PATCH = (
+    (0x0804AC0E, bytes.fromhex("85B0"), bytes.fromhex("88B0")),   # sub sp,#0x20
+    (0x0804AC2A, bytes.fromhex("01AC"), bytes.fromhex("02AC")),   # add r4,sp,#8
+    (0x0804AC70, bytes.fromhex("05B0"), bytes.fromhex("08B0")),   # add sp,#0x20
+)
 
 
 class InsertError(Exception):
@@ -319,6 +330,36 @@ def build_patch(rom: bytearray, ko_dir: str, tables: list[int],
         raise InsertError(f"0x{SAVE_PLACE_SITE:08X} 가 movs r2,#0x10 이 아닙니다")
     rom[o] = SAVE_PLACE_LIMIT
 
+    # 이름 입력 지우기는 한글 음절을 4바이트째로 지웁니다.
+    o = kohook.NAME_DELETE_SITE - common.ROM_BASE
+    if bytes(rom[o:o + 4]) != kohook.NAME_DELETE_ORIG:
+        raise InsertError(f"0x{kohook.NAME_DELETE_SITE:08X} 가 원래 명령이 아닙니다")
+    nd = kohook.build_name_delete(0)
+    nd_at = arena.alloc(len(nd), align=4, near=kohook.NAME_DELETE_SITE)
+    name_delete = common.off_to_ptr(nd_at)
+    nd = kohook.build_name_delete(name_delete)
+    rom[nd_at:nd_at + len(nd)] = nd
+    rom[o:o + 4] = kohook.name_delete_site_bytes(name_delete)
+
+    # 이름 입력 커서는 한글 음절을 화면 칸(2)으로 세어 자리를 잡습니다.
+    o = kohook.NAME_WIDTH_SITE - common.ROM_BASE
+    if bytes(rom[o:o + 4]) != kohook.NAME_WIDTH_ORIG:
+        raise InsertError(f"0x{kohook.NAME_WIDTH_SITE:08X} 가 원래 명령이 아닙니다")
+    nw = kohook.build_name_width(0)
+    nw_at = arena.alloc(len(nw), align=4, near=kohook.NAME_WIDTH_SITE)
+    name_width = common.off_to_ptr(nw_at)
+    nw = kohook.build_name_width(name_width)
+    rom[nw_at:nw_at + len(nw)] = nw
+    rom[o:o + 4] = kohook.name_width_site_bytes(name_width)
+
+    koname.install(rom)                    # 이름 입력판 10x8 가나다 순
+
+    for at, orig, new in NAME_ADD_PATCH:
+        o = at - common.ROM_BASE
+        if bytes(rom[o:o + 2]) != orig:
+            raise InsertError(f"0x{at:08X} 가 {orig.hex()} 가 아닙니다")
+        rom[o:o + 2] = new
+
     choice_no = None
     no_text = translated.get(CHOICE_TABLE, {}).get(CHOICE_NO_INDEX)
     if no_text:
@@ -360,6 +401,8 @@ def build_patch(rom: bytearray, ko_dir: str, tables: list[int],
         "문자열 바이트": written,
         "훅": [common.off_to_ptr(a) for a in hooks],
         "메뉴 건너뛰기": skip_p,
+        "이름 지우기": name_delete,
+        "이름 커서 폭": name_width,
         "선택지 아니오": choice_no,
         "타이틀 로고": title_logo,
         "늘린 자리 남음": (arena.ext[1] - arena.ext[0]) if arena.ext else 0,
@@ -410,6 +453,8 @@ def main() -> int:
     print(f"  문자열           {stats['문자열 바이트']:,}바이트")
     print("  훅               " + " ".join(f"0x{h:08X}" for h in stats['훅']))
     print(f"  메뉴 건너뛰기    0x{stats['메뉴 건너뛰기']:08X}")
+    print(f"  이름 입력        지우기 0x{stats['이름 지우기']:08X}"
+          f" · 커서 0x{stats['이름 커서 폭']:08X}")
     if stats["타이틀 로고"]:
         t = stats["타이틀 로고"]
         print(f"  타이틀 로고      스프라이트 {t['조각']}조각 · 타일 {t['타일']}개 · "

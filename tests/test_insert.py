@@ -276,6 +276,47 @@ class RomPatchTest(unittest.TestCase):
         self.assertEqual(bytes(out[o:o + 2]),
                          bytes([inserttext.SAVE_PLACE_LIMIT, 0x22]))
 
+    def test_이름_입력_덧붙이기_버퍼를_넓힌다(self):
+        out, _ = self._build("한글")
+        for at, orig, new in inserttext.NAME_ADD_PATCH:
+            o = at - common.ROM_BASE
+            self.assertEqual(bytes(self.rom[o:o + 2]), orig)
+            self.assertEqual(bytes(out[o:o + 2]), new)
+
+    def test_이름_입력판을_10x8_로_다시_놓는다(self):
+        import koname
+        out, _ = self._build("한글")
+        for t in koname.GRIDS:
+            got = [int.from_bytes(out[t + i * 2:t + i * 2 + 2], "little")
+                   for i in range(96)]
+            self.assertEqual(got, koname.grid(self.rom, t))
+
+    def test_이름_입력_커서는_화면_칸_폭으로(self):
+        import kohook
+        out, stats = self._build("한글")
+        o = kohook.NAME_WIDTH_SITE - common.ROM_BASE
+        self.assertEqual(bytes(self.rom[o:o + 4]), kohook.NAME_WIDTH_ORIG)
+        at = stats["이름 커서 폭"]
+        self.assertEqual(bytes(out[o:o + 4]), kohook.name_width_site_bytes(at))
+        code = kohook.build_name_width(at)
+        h = at - common.ROM_BASE
+        self.assertEqual(bytes(out[h:h + len(code)]), code)
+        # 입력 한도 쪽 폭 호출은 그대로 (세 음절까지)
+        o = 0x0804AC3E - common.ROM_BASE
+        self.assertEqual(bytes(out[o:o + 4]), bytes(self.rom[o:o + 4]))
+
+    def test_이름_입력_지우기는_음절째로(self):
+        import kohook
+        out, stats = self._build("한글")
+        o = kohook.NAME_DELETE_SITE - common.ROM_BASE
+        self.assertEqual(bytes(self.rom[o:o + 4]), kohook.NAME_DELETE_ORIG)
+        at = stats["이름 지우기"]
+        self.assertEqual(bytes(out[o:o + 4]),
+                         kohook.name_delete_site_bytes(at))
+        code = kohook.build_name_delete(at)
+        h = at - common.ROM_BASE
+        self.assertEqual(bytes(out[h:h + len(code)]), code)
+
     def test_8행_렌더러용_8x8_글리프도_만든다(self):
         out, stats = self._build("한글")
         for ch in "한글":
