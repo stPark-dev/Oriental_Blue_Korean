@@ -62,7 +62,9 @@ IO_SHADOW = 0x03000990
 DISPCNT = IO_SHADOW + 0x00
 WINOUT = IO_SHADOW + 0x4A
 OBJWIN_BIT = 0x8000
-WINOUT_TITLE = (0x2B << 8) | 0x3F     # 창 안: BG0·BG1·BG3·효과 / 창 밖: 전부
+# 창 안: BG0·BG1(물결)·효과만 / 창 밖: 전부. BG3 에는 아래 금색 문장이 있어,
+# 켜 두면 글자 속에 금색 얼룩이 비칩니다.
+WINOUT_TITLE = (0x23 << 8) | 0x3F
 # 창을 켰다는 표시. OBJ 팔레트 15 의 0번 색(투명이라 화면에 안 나옴) 자리.
 WIN_FLAG = 0x05000200 + PALETTE * 32
 
@@ -155,7 +157,7 @@ def subtitle_box(im) -> tuple[int, int, int, int]:
     return (min(r[1] for r in rows), y0, max(r[2] for r in rows) + 1, y1)
 
 
-SUB_EXTRA_TOP = 3        # 부제 띠를 위로 조금 더 — 글자 윗부분 사이도 막습니다
+SUB_EXTRA_TOP = 6        # 부제 띠를 워드마크 아랫면까지 올립니다 — 틈으로 원본 부제 판 윗선이 비쳤습니다
 
 
 def banner_rect(im) -> tuple[int, int, int, int]:

@@ -203,6 +203,7 @@ class HookTest(unittest.TestCase):
         objwin = kologo.WINOUT_TITLE >> 8
         self.assertEqual(objwin & 0x04, 0)          # BG2(돌벽) 끔
         self.assertEqual(objwin & 0x10, 0)          # OBJ(덮개) 끔
+        self.assertEqual(objwin & 0x08, 0)          # BG3(금색 문장) 끔
         self.assertEqual(objwin & 0x03, 0x03)       # BG0·BG1(물결) 켬
         self.assertEqual(kologo.WINOUT_TITLE & 0xFF, 0x3F)   # 창 밖은 그대로
 

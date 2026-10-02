@@ -217,11 +217,15 @@ def restore_wall(canvas: bytes, known: bytes, w: int = W, h: int = H) -> bytearr
     return out
 
 
-REACH_COLS = 8          # 무늬를 가져올 칸을 찾는 가로 거리
-DIST_WEIGHT = 0.15      # 밝기 차에 더하는 거리 가중 (색 번호 단위)
+REACH_ROWS = 3          # 무늬를 가져올 칸을 찾는 세로 거리 (가로는 띠 전체)
+COL_WEIGHT = 0.4       # 가로로 떨어진 칸의 감점 — 양 끝으로 갈수록 어두워지는
+ROW_WEIGHT = 0.1       # 음영이 가로 방향이라, 같은 열(다른 줄)에서 가져와야
+                       # 이어집니다. 위아래 칸은 감점을 작게.
+REUSE_WEIGHT = 0.6      # 같은 칸을 또 쓸 때마다 더하는 값 — 같은 질감이 띠처럼
+                        # 되풀이되지 않게 합니다
 
 
-def _pick_source(r, c, idx, clean, mean, hole, canvas, cols):
+def _pick_source(r, c, idx, clean, mean, hole, canvas, cols, uses=None):
     """구멍 칸 (r, c) 에 무늬를 줄 온전한 칸.
 
     남은 돌벽 화소의 평균 밝기와 비슷하고 가까운 칸을 고릅니다. 이 팔레트는
@@ -240,16 +244,18 @@ def _pick_source(r, c, idx, clean, mean, hole, canvas, cols):
             if 0 <= k < cols:
                 near.append(mean[(r, k)])
         if not near:
-            near = [mean[rc] for rc in clean if abs(rc[0] - r) <= 1]
+            near = [mean[rc] for rc in clean if abs(rc[0] - r) <= REACH_ROWS]
         if not near:
             return None
         ref = sum(near) / len(near)
     best, key = None, None
-    for (rr, cc) in clean:
+    uses = uses or {}
+    for (rr, cc) in sorted(clean):
         dr, dc = abs(rr - r), abs(cc - c)
-        if dr > 1 or dc > REACH_COLS:
+        if dr > REACH_ROWS:
             continue
-        k = abs(mean[(rr, cc)] - ref) + DIST_WEIGHT * (dc + 2 * dr)
+        k = (abs(mean[(rr, cc)] - ref) + COL_WEIGHT * dc + ROW_WEIGHT * dr
+             + REUSE_WEIGHT * uses.get((rr, cc), 0))
         if key is None or k < key:
             best, key = (rr, cc), k
     return best
@@ -281,14 +287,17 @@ def restore_wall_texture(canvas: bytes, known: bytes,
     mean = {rc: sum(canvas[i] for i in cell_pixels(*rc)) / 64 for rc in clean}
     out = bytearray(canvas)
     left = bytearray(known)
+    uses: dict = {}
     for r in range(rows):
         for c in range(cols):
             idx = cell_pixels(r, c)
             if (r, c) in clean or not any(hole(i) for i in idx):
                 continue
-            src = _pick_source(r, c, idx, clean, mean, hole, canvas, cols)
+            src = _pick_source(r, c, idx, clean, mean, hole, canvas, cols,
+                               uses)
             if src is None:
                 continue
+            uses[src] = uses.get(src, 0) + 1
             # 구멍이 칸의 절반을 넘으면 칸을 통째로 바꾸고(같은 타일이
             # 되풀이되어 LZ77 이 잘 줄입니다 — 타일셋은 원래 자리에 들어가야
             # 함), 아니면 구멍 화소만 바꿔 남은 돌벽의 밝기 흐름을 살립니다.
@@ -507,14 +516,19 @@ def blank_wordmark(tiles: bytearray) -> dict:
     return {"칠한 타일": painted}
 
 
+DOT_CELLS = {(1, 24)}       # 띠 1행에서 원본 로고 흔적(흰 점)이 비치는 칸
+
+
 def cover_cells(tiles: bytes) -> list[tuple[int, int, bytes]]:
     """스프라이트로 덮어야 할 띠 칸: (화면 x, 화면 y, 돌벽 64화소).
 
     못 칠하는 칸 중 원본 로고의 획이 남는 곳입니다.
 
     - 블롭 밖 타일(`0x00`–`0x1D`) 칸 — 아래 두 줄의 물결 창 타일은 원본 끝
-      획이 물결을 비치게 파낸 자리이고, 1행 16~30열의 투명 칸으로는 다른
-      배경 층에 남은 원본 로고 흔적(「블」 위 흰 점)이 비칩니다
+      획이 물결을 비치게 파낸 자리입니다. 1행 16~30열의 투명 칸으로는 다른
+      배경 층의 어두운 음영이 비치므로 덮지 않고, 원본 로고 흔적(「블」 위
+      흰 점)이 있는 칸(`DOT_CELLS`)만 덮습니다 — 다 덮으면 음영이 가려져
+      밝은 가로 띠가 생겼습니다
     - `0x50` — 장식 줄과 함께 쓰는 칸
     - 15·16열 거울 쌍 — 한 타일을 뒤집어 쓰므로 양쪽이 같이 맞을 수 없습니다
     - 아래 줄 양 끝(1·30열)의 `0x33` — 띠 가장자리 곳곳에 쓰여 흰 점 넷이 남습니다
@@ -527,7 +541,8 @@ def cover_cells(tiles: bytes) -> list[tuple[int, int, bytes]]:
     for r, c, idx, _hf, _vf in band_cells():
         if c in (0, 31):
             continue
-        if not (idx < TILE_BASE or idx == 0x50
+        if not ((idx < TILE_BASE and (r >= 2 or (r, c) in DOT_CELLS))
+                or idx == 0x50
                 or idx in MIRROR_TILES
                 or (idx == 0x33 and r >= 5 and c in (1, 30))):
             continue

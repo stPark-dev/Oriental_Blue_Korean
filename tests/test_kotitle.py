@@ -143,6 +143,33 @@ class TextureWallTest(unittest.TestCase):
                                            w, h)
         self.assertEqual(out[0 * w + 8 + 3], 12)
 
+    def test_같은_칸을_되풀이해_쓰지_않는다(self):
+        # 한 칸을 여러 번 가져오면 같은 질감이 띠처럼 반복됩니다.
+        w, h = 64, 16                      # 8칸 x 2줄
+        canvas = bytearray(w * h)
+        for y in range(h):
+            for x in range(w):
+                # 칸마다 배치는 다르고 평균 밝기는 같은 무늬
+                canvas[y * w + x] = (5 + (x + y + 3 * (x // 8)) % 3
+                                     if y < 8 else 0)
+        out = kotitle.restore_wall_texture(canvas, bytearray([1] * (w * h)),
+                                           w, h)
+        tiles = {bytes(out[(8 + y) * w + c * 8 + x]
+                       for y in range(8) for x in range(8)) for c in range(8)}
+        self.assertGreaterEqual(len(tiles), 3)   # 아래 줄이 여러 칸에서 옴
+
+    def test_멀리_있어도_번지기보다_무늬를_쓴다(self):
+        w, h = 64, 48                      # 6줄 — 맨 위 줄만 온전
+        canvas = bytearray(w * h)
+        for y in range(h):
+            for x in range(w):
+                canvas[y * w + x] = 3 + (x + y) % 7 if y < 8 else 0
+        out = kotitle.restore_wall_texture(canvas, bytearray([1] * (w * h)),
+                                           w, h)
+        # 3줄 아래 칸도 맨 위 줄의 무늬(번짐이면 같은 색이 가로로 이어짐)
+        row = out[30 * w:30 * w + 8]
+        self.assertGreater(len(set(row)), 2)
+
     def test_온전한_칸이_없으면_번지게_메운다(self):
         w, h = 8, 8
         canvas = bytearray([5] * 64)
