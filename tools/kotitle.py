@@ -225,6 +225,17 @@ REUSE_WEIGHT = 0.6      # 같은 칸을 또 쓸 때마다 더하는 값 — 같�
                         # 되풀이되지 않게 합니다
 
 
+STONE_TONES = range(1, 11)   # 돌벽 색 번호 — 이 구간은 번호가 클수록 밝습니다
+                             # (11~14 는 문장의 황토색)
+
+
+def shift_tone(v: int, delta: int) -> int:
+    """돌벽 색 번호를 밝기로 `delta` 만큼 옮깁니다. 돌벽 색 밖은 그대로."""
+    if v not in STONE_TONES:
+        return v
+    return max(STONE_TONES[0], min(STONE_TONES[-1], v + delta))
+
+
 def _pick_source(r, c, idx, clean, mean, hole, canvas, cols, uses=None):
     """구멍 칸 (r, c) 에 무늬를 줄 온전한 칸.
 
@@ -233,7 +244,7 @@ def _pick_source(r, c, idx, clean, mean, hole, canvas, cols, uses=None):
     없으면 같은 줄 양옆에서 가장 가까운 온전한 칸들의 평균을 기준으로 삼습니다.
     """
     rest = [canvas[i] for i in idx if not hole(i)]
-    if rest:
+    if len(rest) >= 8:
         ref = sum(rest) / len(rest)
     else:
         near = []
@@ -246,7 +257,7 @@ def _pick_source(r, c, idx, clean, mean, hole, canvas, cols, uses=None):
         if not near:
             near = [mean[rc] for rc in clean if abs(rc[0] - r) <= REACH_ROWS]
         if not near:
-            return None
+            return None, 0
         ref = sum(near) / len(near)
     best, key = None, None
     uses = uses or {}
@@ -258,11 +269,39 @@ def _pick_source(r, c, idx, clean, mean, hole, canvas, cols, uses=None):
              + REUSE_WEIGHT * uses.get((rr, cc), 0))
         if key is None or k < key:
             best, key = (rr, cc), k
-    return best
+    return best, ref
+
+
+MIRROR_EDGE = 40      # 거울 채우기를 쓰는 양 끝 폭(화소). 온전한 칸이 적어 무늬
+                      # 복사로는 계단이 생기던 곳입니다. 띠 전체에 쓰면 칸이
+                      # 제각각이 되어 타일셋이 원래 자리를 넘습니다.
+
+
+def mirror_fill(canvas: bytes, known: bytes, w: int, h: int):
+    """구멍을 좌우 거울 자리(x ↔ w-1-x)의 원본 화소로 메웁니다.
+
+    띠의 맵은 오른쪽 절반이 왼쪽을 뒤집어 쓰므로 돌벽이 대칭입니다 (화소
+    80% 가 같음). 한쪽에만 글자가 있던 자리는 반대쪽 돌벽을 쓰면 무늬와
+    음영이 원본 그대로 이어집니다. (메운 그림, 메운 뒤 아는 자리)
+    """
+    out, ok = bytearray(canvas), bytearray(known)
+
+    def hole(i: int) -> bool:
+        return not known[i] or canvas[i] in (TRANSPARENT, WHITE)
+    for y in range(h):
+        for x in range(w):
+            if MIRROR_EDGE <= x < w - MIRROR_EDGE:
+                continue                    # 가장자리만 — 가운데는 무늬 복사로
+            i, j = y * w + x, y * w + (w - 1 - x)
+            if hole(i) and not hole(j):
+                out[i] = canvas[j]
+                ok[i] = 1
+    return out, ok
 
 
 def restore_wall_texture(canvas: bytes, known: bytes,
-                         w: int = W, h: int = H) -> bytearray:
+                         w: int = W, h: int = H,
+                         mirror: bool = False) -> bytearray:
     """구멍을 가까운 **온전한 돌벽 칸의 무늬**로 메웁니다.
 
     `restore_wall` 은 옆 화소 색을 번지게 칠해, 큰 구멍에 가로 줄무늬가
@@ -274,6 +313,8 @@ def restore_wall_texture(canvas: bytes, known: bytes,
     빛의 세기가 줄마다 달라 같은 줄을 먼저 봅니다. 온전한 칸이 없을 때만
     `restore_wall` 로 번지게 메웁니다.
     """
+    if mirror:
+        canvas, known = mirror_fill(canvas, known, w, h)
     cols, rows = w // 8, h // 8
 
     def hole(i: int) -> bool:
@@ -293,18 +334,21 @@ def restore_wall_texture(canvas: bytes, known: bytes,
             idx = cell_pixels(r, c)
             if (r, c) in clean or not any(hole(i) for i in idx):
                 continue
-            src = _pick_source(r, c, idx, clean, mean, hole, canvas, cols,
-                               uses)
+            src, ref = _pick_source(r, c, idx, clean, mean, hole, canvas,
+                                    cols, uses)
             if src is None:
                 continue
             uses[src] = uses.get(src, 0) + 1
+            # 무늬는 가져오되 밝기는 원래 칸에 맞춥니다 — 온전한 칸이 적은
+            # 가장자리에서 밝은 칸·어두운 칸을 번갈아 가져와 계단이 생겼습니다.
+            delta = round(ref - mean[src])
             # 구멍이 칸의 절반을 넘으면 칸을 통째로 바꾸고(같은 타일이
             # 되풀이되어 LZ77 이 잘 줄입니다 — 타일셋은 원래 자리에 들어가야
             # 함), 아니면 구멍 화소만 바꿔 남은 돌벽의 밝기 흐름을 살립니다.
             whole = sum(1 for i in idx if hole(i)) > 32
             for i, j in zip(idx, cell_pixels(*src)):
                 if whole or hole(i):
-                    out[i] = canvas[j]
+                    out[i] = shift_tone(canvas[j], delta)
                     left[i] = 1
     # 남은 구멍(온전한 칸이 하나도 없던 곳)만 번지게 메웁니다
     return restore_wall(out, left, w, h)
@@ -505,7 +549,7 @@ def render_wordmark(tiles: bytearray, logo: str) -> dict:
 def blank_wordmark(tiles: bytearray) -> dict:
     """띠의 일본어 로고 자리를 돌벽으로 메우기만 합니다 (한글은 kologo 가 OBJ 로)."""
     canvas, known = band_canvas(tiles)
-    wall = restore_wall_texture(canvas, known)
+    wall = restore_wall_texture(canvas, known, mirror=True)
     painted = 0
     for r, c, idx, hf, vf in band_cells():
         if idx not in PAINTABLE:
@@ -536,7 +580,7 @@ def cover_cells(tiles: bytes) -> list[tuple[int, int, bytes]]:
     화면 x 는 열×8-8 (0·31열은 화면 밖), y 는 띠 행×8 (`BAND_ROWS`).
     """
     canvas, known = band_canvas(tiles)
-    wall = restore_wall_texture(canvas, known)
+    wall = restore_wall_texture(canvas, known, mirror=True)
     out = []
     for r, c, idx, _hf, _vf in band_cells():
         if c in (0, 31):

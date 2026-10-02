@@ -170,6 +170,47 @@ class TextureWallTest(unittest.TestCase):
         row = out[30 * w:30 * w + 8]
         self.assertGreater(len(set(row)), 2)
 
+    def test_가져온_무늬의_밝기를_원래_칸에_맞춘다(self):
+        # 온전한 칸이 어두운 것뿐이어도, 남은 화소가 밝으면 무늬를 밝게
+        # 옮겨 계단처럼 끊기지 않게 합니다 (돌벽 색 번호 1~10 은 밝기순).
+        w, h = 16, 8
+        canvas = bytearray(w * h)
+        for y in range(h):
+            for x in range(w):
+                canvas[y * w + x] = 2 + (x + y) % 2 if x < 8 else 6
+        for y in range(2, 8):                       # 칸 1: 밝은(6) 화소 둘만 남김
+            for x in range(8, 16):
+                canvas[y * w + x] = kotitle.TRANSPARENT
+        out = kotitle.restore_wall_texture(canvas, bytearray([1] * (w * h)),
+                                           w, h)
+        filled = [out[y * w + x] for y in range(2, 8) for x in range(8, 16)]
+        self.assertGreaterEqual(sum(filled) / len(filled), 5.5)
+        self.assertGreater(len(set(filled)), 1)     # 무늬는 살아 있음
+
+    def test_거울_자리가_멀쩡하면_그_화소로_메운다(self):
+        # 띠의 돌벽은 좌우 대칭(맵이 오른쪽 절반을 뒤집어 씀)이라, 한쪽 구멍은
+        # 반대쪽 같은 자리의 원본 화소가 가장 자연스럽습니다.
+        w, h = 96, 8                       # 양 끝 40화소 안쪽에 구멍
+        canvas = bytearray(w * h)
+        for y in range(h):
+            for x in range(w // 2):
+                v = 1 + (x * 7 + y * 3) % 10
+                canvas[y * w + x] = v
+                canvas[y * w + w - 1 - x] = v
+        for y in range(2, 6):
+            for x in range(1, 5):
+                canvas[y * w + x] = kotitle.TRANSPARENT
+        out = kotitle.restore_wall_texture(canvas, bytearray([1] * (w * h)),
+                                           w, h, mirror=True)
+        for y in range(2, 6):
+            for x in range(1, 5):
+                self.assertEqual(out[y * w + x], canvas[y * w + w - 1 - x])
+
+    def test_밝기를_옮겨도_돌벽_색_안에_머문다(self):
+        self.assertEqual(kotitle.shift_tone(9, 4), 10)
+        self.assertEqual(kotitle.shift_tone(2, -4), 1)
+        self.assertEqual(kotitle.shift_tone(12, 3), 12)   # 문장 색은 그대로
+
     def test_온전한_칸이_없으면_번지게_메운다(self):
         w, h = 8, 8
         canvas = bytearray([5] * 64)
