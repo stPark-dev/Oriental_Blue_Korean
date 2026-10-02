@@ -217,6 +217,90 @@ def restore_wall(canvas: bytes, known: bytes, w: int = W, h: int = H) -> bytearr
     return out
 
 
+REACH_COLS = 8          # 무늬를 가져올 칸을 찾는 가로 거리
+DIST_WEIGHT = 0.15      # 밝기 차에 더하는 거리 가중 (색 번호 단위)
+
+
+def _pick_source(r, c, idx, clean, mean, hole, canvas, cols):
+    """구멍 칸 (r, c) 에 무늬를 줄 온전한 칸.
+
+    남은 돌벽 화소의 평균 밝기와 비슷하고 가까운 칸을 고릅니다. 이 팔레트는
+    색 번호가 클수록 대체로 밝아서 번호 평균을 밝기로 씁니다. 남은 화소가
+    없으면 같은 줄 양옆에서 가장 가까운 온전한 칸들의 평균을 기준으로 삼습니다.
+    """
+    rest = [canvas[i] for i in idx if not hole(i)]
+    if rest:
+        ref = sum(rest) / len(rest)
+    else:
+        near = []
+        for step in (-1, 1):
+            k = c + step
+            while 0 <= k < cols and (r, k) not in clean:
+                k += step
+            if 0 <= k < cols:
+                near.append(mean[(r, k)])
+        if not near:
+            near = [mean[rc] for rc in clean if abs(rc[0] - r) <= 1]
+        if not near:
+            return None
+        ref = sum(near) / len(near)
+    best, key = None, None
+    for (rr, cc) in clean:
+        dr, dc = abs(rr - r), abs(cc - c)
+        if dr > 1 or dc > REACH_COLS:
+            continue
+        k = abs(mean[(rr, cc)] - ref) + DIST_WEIGHT * (dc + 2 * dr)
+        if key is None or k < key:
+            best, key = (rr, cc), k
+    return best
+
+
+def restore_wall_texture(canvas: bytes, known: bytes,
+                         w: int = W, h: int = H) -> bytearray:
+    """구멍을 가까운 **온전한 돌벽 칸의 무늬**로 메웁니다.
+
+    `restore_wall` 은 옆 화소 색을 번지게 칠해, 큰 구멍에 가로 줄무늬가
+    남았습니다. 여기서는 8×8 칸마다 같은 줄에서 가장 가까운(없으면 위아래
+    줄) 구멍 없는 칸을 찾아 그 무늬로 메웁니다(구멍이 절반을 넘는 칸은
+    통째로). 칸은 밝기가 비슷한
+    쪽을 고릅니다 (`_pick_source`) — 가장 가까운 칸만 보면 가장자리에서
+    어두운 테두리 칸을 가져와 어두운 네모가 생겼습니다.
+    빛의 세기가 줄마다 달라 같은 줄을 먼저 봅니다. 온전한 칸이 없을 때만
+    `restore_wall` 로 번지게 메웁니다.
+    """
+    cols, rows = w // 8, h // 8
+
+    def hole(i: int) -> bool:
+        return not known[i] or canvas[i] in (TRANSPARENT, WHITE)
+
+    def cell_pixels(r: int, c: int):
+        return [(r * 8 + y) * w + c * 8 + x for y in range(8) for x in range(8)]
+
+    clean = {(r, c) for r in range(rows) for c in range(cols)
+             if not any(hole(i) for i in cell_pixels(r, c))}
+    mean = {rc: sum(canvas[i] for i in cell_pixels(*rc)) / 64 for rc in clean}
+    out = bytearray(canvas)
+    left = bytearray(known)
+    for r in range(rows):
+        for c in range(cols):
+            idx = cell_pixels(r, c)
+            if (r, c) in clean or not any(hole(i) for i in idx):
+                continue
+            src = _pick_source(r, c, idx, clean, mean, hole, canvas, cols)
+            if src is None:
+                continue
+            # 구멍이 칸의 절반을 넘으면 칸을 통째로 바꾸고(같은 타일이
+            # 되풀이되어 LZ77 이 잘 줄입니다 — 타일셋은 원래 자리에 들어가야
+            # 함), 아니면 구멍 화소만 바꿔 남은 돌벽의 밝기 흐름을 살립니다.
+            whole = sum(1 for i in idx if hole(i)) > 32
+            for i, j in zip(idx, cell_pixels(*src)):
+                if whole or hole(i):
+                    out[i] = canvas[j]
+                    left[i] = 1
+    # 남은 구멍(온전한 칸이 하나도 없던 곳)만 번지게 메웁니다
+    return restore_wall(out, left, w, h)
+
+
 # --- 마스크 도우미 ---------------------------------------------------------
 
 def outline_of(mask: bytes, w: int, h: int) -> bytearray:
@@ -412,7 +496,7 @@ def render_wordmark(tiles: bytearray, logo: str) -> dict:
 def blank_wordmark(tiles: bytearray) -> dict:
     """띠의 일본어 로고 자리를 돌벽으로 메우기만 합니다 (한글은 kologo 가 OBJ 로)."""
     canvas, known = band_canvas(tiles)
-    wall = restore_wall(canvas, known)
+    wall = restore_wall_texture(canvas, known)
     painted = 0
     for r, c, idx, hf, vf in band_cells():
         if idx not in PAINTABLE:
@@ -428,8 +512,9 @@ def cover_cells(tiles: bytes) -> list[tuple[int, int, bytes]]:
 
     못 칠하는 칸 중 원본 로고의 획이 남는 곳입니다.
 
-    - 아래 줄(띠 2행부터)의 물결 창 타일 `0x01`–`0x0E` — 원본 끝 획이
-      물결을 비치게 파낸 자리라, 칠하면 화면 곳곳의 물결이 같이 바뀝니다
+    - 블롭 밖 타일(`0x00`–`0x1D`) 칸 — 아래 두 줄의 물결 창 타일은 원본 끝
+      획이 물결을 비치게 파낸 자리이고, 1행 16~30열의 투명 칸으로는 다른
+      배경 층에 남은 원본 로고 흔적(「블」 위 흰 점)이 비칩니다
     - `0x50` — 장식 줄과 함께 쓰는 칸
     - 15·16열 거울 쌍 — 한 타일을 뒤집어 쓰므로 양쪽이 같이 맞을 수 없습니다
     - 아래 줄 양 끝(1·30열)의 `0x33` — 띠 가장자리 곳곳에 쓰여 흰 점 넷이 남습니다
@@ -437,12 +522,12 @@ def cover_cells(tiles: bytes) -> list[tuple[int, int, bytes]]:
     화면 x 는 열×8-8 (0·31열은 화면 밖), y 는 띠 행×8 (`BAND_ROWS`).
     """
     canvas, known = band_canvas(tiles)
-    wall = restore_wall(canvas, known)
+    wall = restore_wall_texture(canvas, known)
     out = []
     for r, c, idx, _hf, _vf in band_cells():
         if c in (0, 31):
             continue
-        if not ((idx < TILE_BASE and r >= 2) or idx == 0x50
+        if not (idx < TILE_BASE or idx == 0x50
                 or idx in MIRROR_TILES
                 or (idx == 0x33 and r >= 5 and c in (1, 30))):
             continue

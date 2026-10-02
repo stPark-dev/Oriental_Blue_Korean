@@ -83,6 +83,74 @@ class WallTest(unittest.TestCase):
         self.assertEqual(bytes(out), bytes(canvas))
 
 
+class TextureWallTest(unittest.TestCase):
+    """무늬 복사: 구멍은 같은 줄에서 가장 가까운 온전한 돌벽 칸의 같은
+    자리 화소로 메웁니다 (옆 화소를 번지게 칠하면 가로 줄무늬가 납니다)."""
+
+    def _canvas(self):
+        w, h = 32, 8                       # 8x8 칸 4개가 한 줄
+        canvas = bytearray(w * h)
+        for y in range(h):
+            for x in range(w):
+                canvas[y * w + x] = 1 + (x * 3 + y * 5) % 13   # 1~13 무늬
+        return w, h, canvas
+
+    def test_구멍은_가까운_온전한_칸의_같은_자리로(self):
+        w, h, canvas = self._canvas()
+        src = bytes(canvas)
+        for y in range(2, 6):              # 칸 1 에 구멍
+            for x in range(10, 14):
+                canvas[y * w + x] = kotitle.TRANSPARENT
+        out = kotitle.restore_wall_texture(canvas, bytearray([1] * (w * h)),
+                                           w, h)
+        for y in range(2, 6):
+            for x in range(10, 14):
+                # 이웃 칸 0 또는 2 의 같은 자리 화소
+                self.assertIn(out[y * w + x],
+                              (src[y * w + x - 8], src[y * w + x + 8]))
+        self.assertNotIn(kotitle.TRANSPARENT, out)
+
+    def test_모르는_칸은_통째로_복사한다(self):
+        w, h, canvas = self._canvas()
+        src = bytes(canvas)
+        known = bytearray([1] * (w * h))
+        for y in range(h):
+            for x in range(16, 24):
+                known[y * w + x] = 0
+        out = kotitle.restore_wall_texture(canvas, known, w, h)
+        cell = [out[y * w + x] for y in range(h) for x in range(16, 24)]
+        left = [src[y * w + x] for y in range(h) for x in range(8, 16)]
+        right = [src[y * w + x] for y in range(h) for x in range(24, 32)]
+        self.assertIn(cell, (left, right))
+
+    def test_밝기가_비슷한_칸을_고른다(self):
+        # 가장 가까운 칸이 어두운 테두리라도, 남은 화소의 밝기가 비슷한
+        # 조금 먼 칸을 고릅니다 (가장자리에 어두운 네모가 생겼습니다).
+        w, h = 32, 8
+        canvas = bytearray(w * h)
+        for y in range(h):
+            for x in range(w):
+                c = x // 8
+                canvas[y * w + x] = (2 if c == 0 else 12 if c in (1, 3)
+                                     else 11)
+        canvas[0 * w + 8 + 3] = kotitle.TRANSPARENT     # 칸 1 에 구멍 하나
+        # 칸 0(어두움 2, 거리 1) 보다 칸 3(밝음 12, 거리 2)이 맞습니다
+        canvas = bytearray(canvas)
+        for y in range(h):
+            for x in range(16, 24):
+                canvas[y * w + x] = kotitle.WHITE       # 칸 2 는 구멍
+        out = kotitle.restore_wall_texture(canvas, bytearray([1] * (w * h)),
+                                           w, h)
+        self.assertEqual(out[0 * w + 8 + 3], 12)
+
+    def test_온전한_칸이_없으면_번지게_메운다(self):
+        w, h = 8, 8
+        canvas = bytearray([5] * 64)
+        canvas[27] = kotitle.WHITE
+        out = kotitle.restore_wall_texture(canvas, bytearray([1] * 64), w, h)
+        self.assertEqual(out[27], 5)
+
+
 class MaskTest(unittest.TestCase):
     def test_테두리는_1픽셀_고리(self):
         w = h = 5
@@ -187,6 +255,7 @@ class RomTest(unittest.TestCase):
         self.assertIn((15 * 8 - 8, 4 * 8), pos)          # 거울 쌍
         self.assertIn((16 * 8 - 8, 5 * 8), pos)
         self.assertIn((30 * 8 - 8, 6 * 8), pos)          # 오른쪽 끝 흰 점
+        self.assertIn((24 * 8 - 8, 1 * 8), pos)          # 「블」 위 흰 점
 
     def test_두_블록_밖_롬은_그대로다(self):
         out = bytearray(self.rom)

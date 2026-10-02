@@ -119,11 +119,75 @@ def _px_tile(px: bytes) -> bytes:
     return bytes(px[i] | (px[i + 1] << 4) for i in range(0, 64, 2))
 
 
+def subtitle_box(im) -> tuple[int, int, int, int]:
+    """그림 아래쪽 부제(「— 청의 천외 —」) 칸 (x0, y0, x1, y1).
+
+    아래에서부터 불투명한 화소의 가로 폭이 그림 폭의 60% 보다 좁은 줄들이
+    부제입니다 (워드마크 줄은 거의 그림 폭 전체).
+    """
+    a = im.getchannel("A")
+    w, h = im.size
+    rows = []
+    for y in range(h - 1, -1, -1):
+        xs = [x for x in range(w) if a.getpixel((x, y)) >= 128]
+        if not xs:
+            if rows:
+                continue
+            continue
+        if max(xs) - min(xs) >= w * 0.6:
+            break
+        rows.append((y, min(xs), max(xs)))
+    y0, y1 = rows[-1][0], rows[0][0] + 1
+    return (min(r[1] for r in rows), y0, max(r[2] for r in rows) + 1, y1)
+
+
+SUB_EXTRA_TOP = 3        # 부제 띠를 위로 조금 더 — 글자 윗부분 사이도 막습니다
+
+
+def banner_rect(im) -> tuple[int, int, int, int]:
+    """부제 글자(「청의 천외」) 뒤에 칠할 띠 (x0, y0, x1, y1)."""
+    x0, y0, x1, y1 = subtitle_box(im)
+    y0 = max(0, y0 - SUB_EXTRA_TOP)
+    a = im.getchannel("A")
+    # 양쪽 줄표(—)는 두께가 2~3화소라, 세로로 5화소 넘게 쌓인 열만 글자로
+    # 봅니다. 그런 열을 이어진 덩어리로 묶어 가운데 덩어리만 씁니다 —
+    # 「루」의 아래 꼬리도 이 줄들에 걸쳐 있습니다.
+    text = [x for x in range(x0, x1)
+            if sum(1 for y in range(y0, y1) if a.getpixel((x, y)) >= 128) >= 5]
+    runs, cur = [], [text[0]]
+    for x in text[1:]:
+        if x - cur[-1] <= 4:
+            cur.append(x)
+        else:
+            runs.append(cur)
+            cur = [x]
+    runs.append(cur)
+    mid = LOGO_W // 2
+    best = min(runs, key=lambda r: 0 if r[0] <= mid <= r[-1]
+               else min(abs(r[0] - mid), abs(r[-1] - mid)))
+    return best[0], y0, best[-1] + 1, y1
+
+
 def _image(art: str):
+    """로고 그림. 부제 글자 뒤는 짙은 남색으로 칠해 불투명한 띠로 만듭니다.
+
+    부제 글자(약 12화소)가 배경판 부제 판(8화소)보다 커서, 글자 사이로
+    뒤의 금색 문장이 비쳤습니다.
+    """
     from PIL import Image
     im = Image.open(art).convert("RGBA")
     im = im.crop(im.getbbox())
-    return im.resize((LOGO_W, LOGO_H), Image.LANCZOS)
+    im = im.resize((LOGO_W, LOGO_H), Image.LANCZOS)
+    x0, y0, x1, y1 = banner_rect(im)
+    px = im.load()
+    opaque = [px[x, y] for y in range(y0, y1) for x in range(x0, x1)
+              if px[x, y][3] >= 128]
+    navy = min(opaque, key=lambda c: c[0] + c[1] + c[2])[:3] + (255,)
+    for y in range(y0, y1):
+        for x in range(x0, x1):
+            if px[x, y][3] < 128:
+                px[x, y] = navy
+    return im
 
 
 def _quantize(im):

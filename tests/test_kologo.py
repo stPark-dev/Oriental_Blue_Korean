@@ -62,6 +62,21 @@ class AssetTest(unittest.TestCase):
                   (56, 48, bytes([4] * 64)), (112, 32, bytes([5] * 64))]
         cls.a = kologo.build_assets(ART, covers)
 
+    def test_부제_뒤는_불투명한_띠(self):
+        # 부제 글자가 배경판 부제 판보다 커서, 글자 사이로 뒤의 금색
+        # 문장이 비쳤습니다. 부제 칸 안쪽은 빈틈 없이 칠해야 합니다.
+        from PIL import Image
+        raw = Image.open(ART).convert("RGBA")
+        raw = raw.crop(raw.getbbox()).resize((kologo.LOGO_W, kologo.LOGO_H),
+                                             Image.LANCZOS)
+        x0, y0, x1, y1 = kologo.banner_rect(raw)
+        self.assertLess(x1 - x0, kologo.LOGO_W // 2)      # 글자 뒤만
+        im = kologo._image(ART)
+        a = im.getchannel("A")
+        for y in range(y0, y1):
+            for x in range(x0, x1):
+                self.assertGreaterEqual(a.getpixel((x, y)), 128, (x, y))
+
     def test_팔레트는_16색_0번은_투명(self):
         self.assertEqual(len(self.a["palette"]), 32)
 
