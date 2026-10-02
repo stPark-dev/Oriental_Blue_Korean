@@ -198,6 +198,35 @@ class RomPatchTest(unittest.TestCase):
         a = at - common.ROM_BASE
         self.assertEqual(bytes(out[a:a + len(code)]), code)
 
+    def test_대화_선택지_아니오는_ROM_문자열을_가리킨다(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ko = os.path.join(tmp, "ko")
+            os.makedirs(ko)
+            with open(os.path.join(ko, f"t{TABLE:06X}.txt"), "w",
+                      encoding="utf-8", newline="\n") as f:
+                f.write("# 테스트\n\n## 0004 @0x000000\n아니오\n\n")
+            out, stats = inserttext.build_patch(bytearray(self.rom), ko,
+                                                [TABLE], TTF, 14, 2)
+        o = inserttext.CHOICE_NO_LITERAL - common.ROM_BASE
+        self.assertEqual(int.from_bytes(self.rom[o:o + 4], "little"),
+                         0x02001D5C)
+        ptr = int.from_bytes(out[o:o + 4], "little")
+        self.assertEqual(ptr, stats["선택지 아니오"])
+        s = ptr - common.ROM_BASE
+        end = out.index(0, s)
+        codes = inserttext.decode_codes(bytes(out[s:end]))
+        want = []
+        for ch in "아니오":
+            lead, trail = kosyl.to_pair(ch)
+            want += [kohook.lead_code(lead), kohook.trail_code(trail)]
+        self.assertEqual(codes, want)
+
+    def test_아니오를_옮기지_않으면_선택지는_그대로(self):
+        out, stats = self._build("한글")
+        o = inserttext.CHOICE_NO_LITERAL - common.ROM_BASE
+        self.assertEqual(bytes(out[o:o + 4]), bytes(self.rom[o:o + 4]))
+        self.assertIsNone(stats["선택지 아니오"])
+
     def test_기록_장소_이름_복사_한도를_넓힌다(self):
         out, _ = self._build("한글")
         o = inserttext.SAVE_PLACE_SITE - common.ROM_BASE

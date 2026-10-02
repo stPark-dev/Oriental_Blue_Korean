@@ -41,6 +41,15 @@ from script_io import ScriptFile  # noqa: E402
 SAVE_PLACE_SITE = 0x0801550A
 SAVE_PLACE_LIMIT = 25
 
+# 대화창 선택지 「はい／いいえ」(`<$15>`). 0x080204D8 이 DF3908 #3·#4 를
+# 3칸(6바이트)짜리 RAM 버퍼 0x02001D54·0x02001D5C 에 가운데 맞춰 복사하고,
+# 0x080205CE 가 리터럴 0x08020634 의 0x02001D5C 를 그립니다. 한글 「아니오」는
+# 12바이트라 「아」에서 잘렸고, 버퍼 뒤 0x02001D64 는 다른 루틴이 씁니다.
+# 그래서 버퍼는 두고, 그리는 쪽 리터럴을 ROM 에 넣은 문자열로 돌립니다.
+CHOICE_NO_LITERAL = 0x08020634
+CHOICE_NO_RAM = 0x02001D5C
+CHOICE_TABLE, CHOICE_NO_INDEX = 0xDF3908, 4
+
 
 class InsertError(Exception):
     pass
@@ -282,6 +291,18 @@ def build_patch(rom: bytearray, ko_dir: str, tables: list[int],
         raise InsertError(f"0x{SAVE_PLACE_SITE:08X} 가 movs r2,#0x10 이 아닙니다")
     rom[o] = SAVE_PLACE_LIMIT
 
+    choice_no = None
+    no_text = translated.get(CHOICE_TABLE, {}).get(CHOICE_NO_INDEX)
+    if no_text:
+        o = CHOICE_NO_LITERAL - common.ROM_BASE
+        if int.from_bytes(rom[o:o + 4], "little") != CHOICE_NO_RAM:
+            raise InsertError(f"0x{CHOICE_NO_LITERAL:08X} 가 0x{CHOICE_NO_RAM:08X} 가 아닙니다")
+        data = koenc.encode(no_text, ko_map, ja_rev)      # 비압축 — 그대로 그립니다
+        at = arena.alloc(len(data), align=4)
+        rom[at:at + len(data)] = data
+        choice_no = common.off_to_ptr(at)
+        common.w32(rom, o, choice_no)
+
     written = entries = 0
     for base, rows in translated.items():
         for idx, text in sorted(rows.items()):
@@ -304,6 +325,7 @@ def build_patch(rom: bytearray, ko_dir: str, tables: list[int],
         "문자열 바이트": written,
         "훅": [common.off_to_ptr(a) for a in hooks],
         "메뉴 건너뛰기": skip_p,
+        "선택지 아니오": choice_no,
         "색인": common.off_to_ptr(slot_at),
         "글리프": common.off_to_ptr(glyph_at),
         "글리프8": common.off_to_ptr(glyph8_at),
