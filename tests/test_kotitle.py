@@ -20,6 +20,7 @@ ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 ROM = os.path.join(ROOT, "rom", "baserom.gba")
 LOGO = os.path.join(ROOT, "art", "title_ko.png")
 FONT = os.path.join(ROOT, "font", "Galmuri7.ttf")
+SUBFONT = os.path.join(ROOT, "font", "Galmuri11-Condensed.ttf")
 
 
 class ConstTest(unittest.TestCase):
@@ -272,6 +273,27 @@ class RomTest(unittest.TestCase):
                              after[t * 32:(t + 1) * 32],
                              f"건드리면 안 되는 타일 0x{idx:03X}")
 
+    def test_부제는_두_줄_열두_타일(self):
+        # 원본 「青の天外」는 16화소 높이 — 위 줄 0x140~ 와 아래 줄 0x160~.
+        # 아래 줄만 고치면 위 줄에 일본어 글자 윗부분이 남습니다.
+        self.assertEqual(len(kotitle.SUBTITLE_TILES), 12)
+        self.assertIn(0x140, kotitle.SUBTITLE_TILES)
+        self.assertIn(0x165, kotitle.SUBTITLE_TILES)
+
+    @unittest.skipUnless(os.path.exists(SUBFONT), "Galmuri11-Condensed 없음")
+    def test_부제에_원본_글자가_남지_않고_한글이_두_줄에_걸친다(self):
+        tiles = kotitle.load_tiles(self.rom)
+        stats = kotitle.render_subtitle(tiles, SUBFONT)
+        canvas = kotitle.subtitle_canvas(tiles)
+        mask = kotitle.subtitle_text_mask(SUBFONT, kotitle.SUBTITLE_TEXT)
+        w = kotitle.SUBTITLE_W
+        for i, v in enumerate(canvas):
+            if v == kotitle.WHITE:
+                self.assertTrue(mask[i], f"원본 흰 화소가 남음 {i % w},{i // w}")
+        rows = {i // w for i, m in enumerate(mask) if m}
+        self.assertTrue(any(r < 8 for r in rows) and any(r >= 8 for r in rows))
+        self.assertGreater(stats["부제 화소"], 60)
+
     def test_부제_여섯_타일이_바뀐다(self):
         before = kotitle.load_tiles(self.rom)
         out = bytearray(self.rom)
@@ -306,7 +328,7 @@ class RomTest(unittest.TestCase):
             px = kotitle.tile_pixels(tiles, idx)
             self.assertNotIn(kotitle.TRANSPARENT, px, f"0x{idx:03X}")
             self.assertNotIn(kotitle.WHITE, px, f"0x{idx:03X}")
-        self.assertEqual(stats["부제 화소"], 0)
+        self.assertGreater(stats["부제 화소"], 0)   # 부제는 원래 판에 한글로
 
     def test_덮개_칸은_못_칠하는_칸뿐이고_돌벽만_담는다(self):
         cells = kotitle.cover_cells(kotitle.load_tiles(self.rom))

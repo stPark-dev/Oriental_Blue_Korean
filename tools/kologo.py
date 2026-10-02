@@ -157,53 +157,15 @@ def subtitle_box(im) -> tuple[int, int, int, int]:
     return (min(r[1] for r in rows), y0, max(r[2] for r in rows) + 1, y1)
 
 
-SUB_EXTRA_TOP = 6        # 부제 띠를 워드마크 아랫면까지 올립니다 — 틈으로 원본 부제 판 윗선이 비쳤습니다
-
-
-def banner_rect(im) -> tuple[int, int, int, int]:
-    """부제 글자(「청의 천외」) 뒤에 칠할 띠 (x0, y0, x1, y1)."""
-    x0, y0, x1, y1 = subtitle_box(im)
-    y0 = max(0, y0 - SUB_EXTRA_TOP)
-    a = im.getchannel("A")
-    # 양쪽 줄표(—)는 두께가 2~3화소라, 세로로 5화소 넘게 쌓인 열만 글자로
-    # 봅니다. 그런 열을 이어진 덩어리로 묶어 가운데 덩어리만 씁니다 —
-    # 「루」의 아래 꼬리도 이 줄들에 걸쳐 있습니다.
-    text = [x for x in range(x0, x1)
-            if sum(1 for y in range(y0, y1) if a.getpixel((x, y)) >= 128) >= 5]
-    runs, cur = [], [text[0]]
-    for x in text[1:]:
-        if x - cur[-1] <= 4:
-            cur.append(x)
-        else:
-            runs.append(cur)
-            cur = [x]
-    runs.append(cur)
-    mid = LOGO_W // 2
-    best = min(runs, key=lambda r: 0 if r[0] <= mid <= r[-1]
-               else min(abs(r[0] - mid), abs(r[-1] - mid)))
-    return best[0], y0, best[-1] + 1, y1
+SUB_EXTRA_TOP = 3        # 부제 글자 윗부분이 워드마크 아랫줄에 걸쳐 있어 위로 조금 더
 
 
 def _image(art: str):
-    """로고 그림. 부제 글자 뒤는 짙은 남색으로 칠해 불투명한 띠로 만듭니다.
-
-    부제 글자(약 12화소)가 배경판 부제 판(8화소)보다 커서, 글자 사이로
-    뒤의 금색 문장이 비쳤습니다.
-    """
+    """로고 그림 (224×72). 아래쪽 부제는 `subtitle_mask` 로 가려 뺍니다."""
     from PIL import Image
     im = Image.open(art).convert("RGBA")
     im = im.crop(im.getbbox())
-    im = im.resize((LOGO_W, LOGO_H), Image.LANCZOS)
-    x0, y0, x1, y1 = banner_rect(im)
-    px = im.load()
-    opaque = [px[x, y] for y in range(y0, y1) for x in range(x0, x1)
-              if px[x, y][3] >= 128]
-    navy = min(opaque, key=lambda c: c[0] + c[1] + c[2])[:3] + (255,)
-    for y in range(y0, y1):
-        for x in range(x0, x1):
-            if px[x, y][3] < 128:
-                px[x, y] = navy
-    return im
+    return im.resize((LOGO_W, LOGO_H), Image.LANCZOS)
 
 
 def subtitle_mask(im) -> list[bool]:
@@ -246,13 +208,86 @@ def is_body(c) -> bool:
 
 BODY_MIN_BLUE = 90
 BODY_MIN_SAT = 60
+SPECK_MAX = 12          # 몸통에 둘러싸인 이 크기 이하 덩어리는 몸통으로
+
+
+EDGE_KEEP = 2           # 글자 가장자리에서 이 거리 안은 외곽선·테두리로 둡니다
+DARK_LUM = 80           # 이보다 어두운 안쪽 화소(그림의 금 간 선)는 몸통으로
+
+
+def fill_interior_dark(body: list, word: list, dark: list, w: int, h: int) -> list:
+    """가장자리에서 `EDGE_KEEP` 보다 안쪽의 어두운 화소를 몸통으로.
+
+    그림의 금 간 선은 외곽선과 이어져 있어 `fill_specks` 로는 안 메워집니다.
+    외곽선·회색 테두리는 가장자리 가까이에 있으므로 남고, 안쪽의 밝은
+    하이라이트도 그대로 둡니다.
+    """
+    INF = 1 << 20
+    dist = [0 if not word[i] else INF for i in range(w * h)]
+    frontier = [i for i in range(w * h) if not word[i]]
+    d = 0
+    while frontier:
+        d += 1
+        nxt = []
+        for i in frontier:
+            x, y = i % w, i // w
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    nx, ny = x + dx, y + dy
+                    if 0 <= nx < w and 0 <= ny < h:
+                        j = ny * w + nx
+                        if dist[j] > d:
+                            dist[j] = d
+                            nxt.append(j)
+        frontier = nxt
+    # 그림 테두리 밖도 글자 밖으로 봅니다
+    for i in range(w * h):
+        x, y = i % w, i // w
+        dist[i] = min(dist[i], x + 1, y + 1, w - x, h - y)
+    return [1 if body[i] or (word[i] and dark[i] and dist[i] > EDGE_KEEP) else 0
+            for i in range(w * h)]
+
+
+def fill_specks(body: list, word: list, w: int, h: int) -> list:
+    """몸통 안에 박힌 작은 비몸통 덩어리(그림의 짙은 점)를 몸통으로 메웁니다.
+
+    그대로 두면 물결 속에 검은 얼룩으로 보입니다. 글자 밖과 맞닿았거나
+    `SPECK_MAX` 보다 큰 덩어리(획을 가르는 외곽선)는 남깁니다.
+    """
+    out = list(body)
+    seen = [False] * (w * h)
+    for start in range(w * h):
+        if body[start] or not word[start] or seen[start]:
+            continue
+        comp, stack, edge = [], [start], False
+        seen[start] = True
+        while stack:
+            i = stack.pop()
+            comp.append(i)
+            x, y = i % w, i // w
+            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                nx, ny = x + dx, y + dy
+                if not (0 <= nx < w and 0 <= ny < h):
+                    edge = True
+                    continue
+                j = ny * w + nx
+                if not word[j]:
+                    edge = True
+                elif not body[j] and not seen[j]:
+                    seen[j] = True
+                    stack.append(j)
+        if not edge and len(comp) <= SPECK_MAX:
+            for i in comp:
+                out[i] = 1
+    return out
 
 
 def layers(art: str):
     """(창 마스크, 일반 그림).
 
     창 마스크는 워드마크 글자 몸통(파란 부분) — 여기로 원본처럼 뒤의
-    물결 층이 비칩니다. 일반 그림은 글자의 금속 테두리·외곽선과 부제입니다.
+    물결 층이 비칩니다. 일반 그림은 글자의 금속 테두리·외곽선입니다.
+    부제는 넣지 않습니다 — 배경판의 원래 부제 판에 한글로 그립니다.
     """
     from PIL import Image
     im = _image(art)
@@ -265,12 +300,20 @@ def layers(art: str):
     for i in range(w * h):
         x, y = i % w, i // w
         c = src[x, y]
-        if c[3] < 128:
-            continue
-        if not sub[i] and is_body(c):
+        if c[3] < 128 or sub[i]:
+            continue                       # 부제는 배경판 원래 판에 (kotitle)
+        if is_body(c):
             body[i] = 1
-        else:
-            dst[x, y] = c
+    word = [src[i % w, i // w][3] >= 128 and not sub[i] for i in range(w * h)]
+
+    def lum(c):
+        return (c[0] * 3 + c[1] * 6 + c[2]) / 10
+    dark = [lum(src[i % w, i // w]) < DARK_LUM for i in range(w * h)]
+    body = fill_interior_dark(body, word, dark, w, h)
+    body = fill_specks(body, word, w, h)
+    for i in range(w * h):
+        if word[i] and not body[i]:
+            dst[i % w, i // w] = src[i % w, i // w]
     return body, normal
 
 

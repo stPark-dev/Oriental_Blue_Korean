@@ -20,6 +20,52 @@ ART = os.path.join(ROOT, "art", "title_ko.png")
 AT = 0x081BE000
 
 
+class SpeckTest(unittest.TestCase):
+    """몸통에 둘러싸인 작은 비(非)몸통 덩어리는 몸통으로 — 검은 얼룩."""
+
+    def test_둘러싸인_작은_점은_메운다(self):
+        w, h = 10, 10
+        body = [1] * (w * h)
+        body[4 * w + 4] = body[4 * w + 5] = 0           # 2화소 점
+        out = kologo.fill_specks(body, [1] * (w * h), w, h)
+        self.assertEqual(out[4 * w + 4], 1)
+        self.assertEqual(out[4 * w + 5], 1)
+
+    def test_긴_외곽선은_남긴다(self):
+        w, h = 30, 10
+        body = [1] * (w * h)
+        for x in range(2, 28):
+            body[5 * w + x] = 0                          # 획을 가르는 선
+        out = kologo.fill_specks(body, [1] * (w * h), w, h)
+        self.assertEqual(out[5 * w + 10], 0)
+
+    def test_글자_밖과_닿은_자리는_남긴다(self):
+        w, h = 10, 10
+        word = [1] * (w * h)
+        word[0] = 0                                       # 글자 밖
+        body = [1] * (w * h)
+        body[1] = 0                                       # 밖과 닿은 테두리
+        out = kologo.fill_specks(body, word, w, h)
+        self.assertEqual(out[1], 0)
+
+
+class InteriorDarkTest(unittest.TestCase):
+    def test_가장자리에서_먼_어두운_화소는_몸통(self):
+        w, h = 12, 12
+        word = [1] * (w * h)
+        for i in range(w):                       # 테두리 한 줄은 글자 밖
+            word[i] = word[(h - 1) * w + i] = 0
+            word[i * w] = word[i * w + w - 1] = 0
+        body = [1] * (w * h)
+        dark = [False] * (w * h)
+        for x in range(1, 11):                   # 가장자리부터 안쪽까지 이은 금
+            body[6 * w + x] = 0
+            dark[6 * w + x] = True
+        out = kologo.fill_interior_dark(body, word, dark, w, h)
+        self.assertEqual(out[6 * w + 6], 1)      # 안쪽은 몸통
+        self.assertEqual(out[6 * w + 1], 0)      # 가장자리 외곽선은 남김
+
+
 class LayoutTest(unittest.TestCase):
     """224 폭 그림을 GBA 스프라이트 크기로 자릅니다."""
 
@@ -62,22 +108,20 @@ class AssetTest(unittest.TestCase):
                   (56, 48, bytes([4] * 64)), (112, 32, bytes([5] * 64))]
         cls.a = kologo.build_assets(ART, covers)
 
-    def test_부제_뒤는_불투명한_띠(self):
-        # 부제 글자가 배경판 부제 판보다 커서, 글자 사이로 뒤의 금색
-        # 문장이 비쳤습니다. 부제 칸 안쪽은 빈틈 없이 칠해야 합니다.
-        from PIL import Image
-        raw = Image.open(ART).convert("RGBA")
-        raw = raw.crop(raw.getbbox()).resize((kologo.LOGO_W, kologo.LOGO_H),
-                                             Image.LANCZOS)
-        x0, y0, x1, y1 = kologo.banner_rect(raw)
-        self.assertLess(x1 - x0, kologo.LOGO_W // 2)      # 글자 뒤만
+    def test_부제는_스프라이트에_없다(self):
+        # 부제는 배경판의 원래 부제 판에 한글로 그립니다 (kotitle).
+        body, normal = kologo.layers(ART)
         im = kologo._image(ART)
-        a = im.getchannel("A")
-        for y in range(y0, y1):
-            for x in range(x0, x1):
-                self.assertGreaterEqual(a.getpixel((x, y)), 128, (x, y))
+        sub = kologo.subtitle_mask(im)
+        self.assertGreater(sum(sub), 100)
+        px = normal.load()
+        W = kologo.LOGO_W
+        for i, s_ in enumerate(sub):
+            if s_:
+                self.assertEqual(body[i], 0)
+                self.assertLess(px[i % W, i // W][3], 128)
 
-    def test_글자_몸통은_창_테두리와_부제는_그림(self):
+    def test_글자_몸통은_창_테두리는_그림(self):
         body, normal = kologo.layers(ART)
         W, H = kologo.LOGO_W, kologo.LOGO_H
         self.assertEqual(len(body), W * H)
@@ -88,9 +132,9 @@ class AssetTest(unittest.TestCase):
             x, y = i % W, i // W
             if body[i]:
                 self.assertFalse(sub[i])                 # 창은 워드마크만
-                self.assertTrue(kologo.is_body(src[x, y]))
+                self.assertGreaterEqual(src[x, y][3], 128)   # 글자 안 화소
                 self.assertLess(px[x, y][3], 128)        # 창 자리엔 그림 없음
-            elif src[x, y][3] >= 128:
+            elif src[x, y][3] >= 128 and not sub[i]:
                 self.assertEqual(px[x, y], src[x, y])    # 나머지는 그림 그대로
         self.assertGreater(sum(body), 1000)
 

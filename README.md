@@ -153,7 +153,8 @@ pip install -r requirements.txt
 
 cp /경로/오리엔탈블루.gba rom/baserom.gba   # 본인이 덤프한 ROM
 cp /경로/Galmuri14.ttf font/                # 본문용 16×16 (OFL, 저장소 미포함)
-cp /경로/Galmuri7.ttf  font/                # 메뉴용 8×8 · 타이틀 부제
+cp /경로/Galmuri7.ttf  font/                # 메뉴용 8×8
+cp /경로/Galmuri11-Condensed.ttf font/      # 타이틀 부제 「청의 천외」
 
 make check      # ROM SHA-1 대조
 make test       # 테스트 383개
