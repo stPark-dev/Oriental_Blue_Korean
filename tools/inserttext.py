@@ -35,6 +35,12 @@ import obtext  # noqa: E402
 import thumb  # noqa: E402
 from script_io import ScriptFile  # noqa: E402
 
+# 기록 화면의 장소 이름. `0x0801550A movs r2,#0x10` 으로 기록 머리(+4)에
+# 16바이트까지만 복사합니다. 한글은 음절당 4바이트라 「대도・천」에서 잘렸습니다.
+# 그 자리는 +4~+0x1D 26바이트(+0x1E 는 레벨)라 25바이트 + 종결자까지 됩니다.
+SAVE_PLACE_SITE = 0x0801550A
+SAVE_PLACE_LIMIT = 25
+
 
 class InsertError(Exception):
     pass
@@ -262,6 +268,20 @@ def build_patch(rom: bytearray, ko_dir: str, tables: list[int],
         o = site - common.ROM_BASE
         rom[o:o + 4] = thumb.bl_bytes(site, common.off_to_ptr(at))
 
+    # 메뉴 렌더러는 뒤 코드를 건너뜁니다 — 음절이 한 칸이 되어 칸 폭에 들어갑니다.
+    skip = kohook.build_menu_skip(0)
+    skip_at = arena.alloc(len(skip), align=4, near=kohook.MENU_SKIP_SITE)
+    skip_p = common.off_to_ptr(skip_at)
+    skip = kohook.build_menu_skip(skip_p)
+    rom[skip_at:skip_at + len(skip)] = skip
+    o = kohook.MENU_SKIP_SITE - common.ROM_BASE
+    rom[o:o + 4] = kohook.menu_skip_site_bytes(skip_p)
+
+    o = SAVE_PLACE_SITE - common.ROM_BASE
+    if bytes(rom[o:o + 2]) != b"\x10\x22":
+        raise InsertError(f"0x{SAVE_PLACE_SITE:08X} 가 movs r2,#0x10 이 아닙니다")
+    rom[o] = SAVE_PLACE_LIMIT
+
     written = entries = 0
     for base, rows in translated.items():
         for idx, text in sorted(rows.items()):
@@ -283,6 +303,7 @@ def build_patch(rom: bytearray, ko_dir: str, tables: list[int],
         "음절": count,
         "문자열 바이트": written,
         "훅": [common.off_to_ptr(a) for a in hooks],
+        "메뉴 건너뛰기": skip_p,
         "색인": common.off_to_ptr(slot_at),
         "글리프": common.off_to_ptr(glyph_at),
         "글리프8": common.off_to_ptr(glyph8_at),
@@ -327,6 +348,7 @@ def main() -> int:
     print(f"  한글 음절        {stats['음절']:,}자 (한도 없음)")
     print(f"  문자열           {stats['문자열 바이트']:,}바이트")
     print("  훅               " + " ".join(f"0x{h:08X}" for h in stats['훅']))
+    print(f"  메뉴 건너뛰기    0x{stats['메뉴 건너뛰기']:08X}")
     print(f"  색인 테이블      0x{stats['색인']:08X} "
           f"({kofont.SYLLABLES * 2:,}바이트)")
     print(f"  글리프 16×16     0x{stats['글리프']:08X} "

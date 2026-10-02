@@ -119,5 +119,31 @@ class TableLimitTest(unittest.TestCase):
                                           kowidth.FIELD_CELLS), [(0, 22)])
 
 
+class FixedLayoutTest(unittest.TestCase):
+    """마석 가이드(DF66E8)는 줄마다 따로 그리는 고정 칸입니다.
+
+    홀수 항목은 제목 16칸 1줄, 짝수 항목은 본문 28칸 8줄.
+    """
+
+    def test_가이드_제목은_16칸_한_줄(self):
+        self.assertEqual(kowidth.entry_layout("tDF66E8.txt", 1), (16, 1))
+        self.assertEqual(kowidth.entry_layout("tDF66E8.txt", 13), (16, 1))
+
+    def test_가이드_본문은_28칸_여덟_줄(self):
+        self.assertEqual(kowidth.entry_layout("tDF66E8.txt", 2), (28, 8))
+        self.assertEqual(kowidth.entry_layout("tDF66E8.txt", 14), (28, 8))
+
+    def test_다른_표는_줄_수_제한이_없다(self):
+        self.assertEqual(kowidth.entry_layout("tE27024.txt", 1),
+                         (kowidth.FIELD_CELLS, None))
+        self.assertEqual(kowidth.entry_layout("tDEC698.txt", 2),
+                         (kowidth.MENU_CELLS, None))
+
+    def test_여덟_줄을_넘으면_잡아낸다(self):
+        self.assertEqual(kowidth.too_many_lines("가\n" * 7 + "가", 8), None)
+        self.assertEqual(kowidth.too_many_lines("가\n" * 8 + "가", 8), 9)
+        self.assertEqual(kowidth.too_many_lines("가\n" * 20, None), None)
+
+
 if __name__ == "__main__":
     unittest.main()

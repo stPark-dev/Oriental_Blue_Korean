@@ -101,6 +101,27 @@ def table_limit(name: str) -> int:
     return FIELD_CELLS if is_field(name) else MENU_CELLS
 
 
+# 줄마다 따로 그리는 고정 칸. 마석 가이드(DF66E8)는 이벤트 VM 레코드
+# 0x09FDE0 이 제목을 16칸 한 줄로, 0x09FEA0~ 여덟 개가 본문을 28칸 한 줄씩
+# 0~7번째 줄로 그립니다 (0x080389D8 이 줄바꿈으로 N번째 줄을 잘라 옴).
+# 아홉째 줄부터는 화면에 나오지 않습니다.
+GUIDE_TITLE = (16, 1)
+GUIDE_BODY = (28, 8)
+
+
+def entry_layout(name: str, index: int) -> tuple[int, int | None]:
+    """항목 하나의 (줄 폭, 최대 줄 수). 줄 수 제한이 없으면 None."""
+    if os.path.basename(name) == "tDF66E8.txt":
+        return GUIDE_TITLE if index % 2 else GUIDE_BODY
+    return table_limit(name), None
+
+
+def too_many_lines(text: str, max_lines: int | None) -> int | None:
+    """줄 수가 한도를 넘으면 그 줄 수를, 아니면 None."""
+    n = text.count("\n") + 1
+    return n if max_lines is not None and n > max_lines else None
+
+
 def is_index_data(text: str) -> bool:
     """`이름／읽기` 형태인지. 정렬용 색인이라 화면에 그대로 나오지 않습니다."""
     return "／" in text
@@ -160,10 +181,15 @@ def main() -> int:
             total += 1
             if not is_index_data(e.text):
                 lines = e.text.split("\n")
-                limit = (args.max_cells if args.max_cells is not None
-                         else table_limit(name))
+                limit, max_lines = entry_layout(name, e.index)
+                if args.max_cells is not None:
+                    limit = args.max_cells
                 for ln, w in too_wide(ja.get(e.index, ""), e.text, limit):
                     hard.append((name, e.index, w, lines[ln]))
+                n = too_many_lines(e.text, max_lines)
+                if n is not None:
+                    hard.append((name, e.index, 0,
+                                 f"{n}줄 > 고정 칸 {max_lines}줄"))
             bad = check(ja.get(e.index, ""), e.text)
             if not bad:
                 continue

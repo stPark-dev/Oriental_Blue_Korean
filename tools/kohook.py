@@ -43,6 +43,14 @@ CALL_SITE_HALF = 0x0801CBF0
 # 세 번째 렌더러(메뉴 항목). 스트림 포인터가 r6 이 아니라 **r8** 입니다.
 CALL_SITE_MENU = 0x0801C5E8
 
+# 메뉴 렌더러의 코드 분기 `ldr r0,=0x51F / cmp r5,r0 / bhi` (0x0801C5DC).
+# 0x51F 를 넘는 코드는 사용자 글리프(아이콘) 경로로 갑니다. 앞 두 명령을
+# bl 로 바꿔, 뒤 코드면 그리지도 세지도 않고 루프의 다음 글자 검사로
+# 건너뜁니다. bhi(0x0801C5E0)는 그대로 둡니다.
+MENU_SKIP_SITE = 0x0801C5DC
+MENU_SKIP_RESUME = 0x0801C732      # 남은 칸(sb)을 줄이는 명령 바로 뒤
+MENU_CUSTOM_FROM = 0x51F
+
 LEAD_BANKS = (3, 4)
 TRAIL_BANK = 5
 PARAM_FIRST = 0x09             # 0x00·0x08 을 피한 첫 파라미터
@@ -178,3 +186,45 @@ def build(at: int, slot_table: int, glyphs: int,
     a.bl(fallback)
     a.pop([4, 5, 6], pc=True)
     return a.assemble()
+
+
+def build_menu_skip(at: int) -> bytes:
+    """메뉴 렌더러(0x0801C574)에서 뒤 코드를 건너뛰는 코드.
+
+    `0x0801C5DC` 에서 `bl` 로 들어옵니다. r5 = 방금 읽은 코드.
+
+        앞 코드 뒤의 뒤 코드(0x509–0x524) -> 0x0801C732 로 (그리기·sb 감소 없음)
+        그 밖                 -> cmp r5, #0x51F 를 해 두고 돌아감 (bhi 가 이어받음)
+
+    음절이 앞 코드 한 칸만 차지하므로 가나와 같은 폭이 되고, 레코드의
+    칸 수(sb)도 음절당 하나만 줄어듭니다. r0 만 씁니다 — 원래 코드도
+    여기서 r0 를 덮어씁니다.
+    """
+    a = thumb.Asm(at)
+    a.ldr_pool(0, trail_code(0))
+    a.cmp_reg(5, 0)
+    a.bcond("cc", "normal")
+    a.ldr_pool(0, trail_code(TRAIL_COUNT - 1))
+    a.cmp_reg(5, 0)
+    a.bhi("normal")
+    # 0x520–0x524 는 사용자 글리프(「Lv」 등)와 겹칩니다. 앞 코드 바로
+    # 뒤일 때만 뒤 코드입니다 — 앞 코드의 뱅크 바이트는 [r8-4].
+    a.mov_hi(0, 8)
+    a.subs_imm8(0, 4)
+    a.ldrb_imm(0, 0, 0)
+    a.cmp_imm(0, LEAD_BANKS[0])
+    a.bcond("cc", "normal")
+    a.cmp_imm(0, LEAD_BANKS[-1])
+    a.bhi("normal")
+    a.ldr_pool(0, MENU_SKIP_RESUME | 1)
+    a.bx(0)
+    a.mark("normal")
+    a.ldr_pool(0, MENU_CUSTOM_FROM)
+    a.cmp_reg(5, 0)
+    a.bx(14)
+    return a.assemble()
+
+
+def menu_skip_site_bytes(at: int) -> bytes:
+    """`0x0801C5DC` 의 ldr·cmp 네 바이트를 대신할 `bl at`."""
+    return thumb.bl_bytes(MENU_SKIP_SITE, at)

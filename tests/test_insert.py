@@ -185,6 +185,26 @@ class RomPatchTest(unittest.TestCase):
             g = stats["글리프"] - common.ROM_BASE + slot * 32
             self.assertTrue(any(out[g:g + 32]), ch)
 
+    def test_메뉴_렌더러는_뒤_코드를_건너뛴다(self):
+        out, stats = self._build("한글")
+        at = stats["메뉴 건너뛰기"]
+        o = kohook.MENU_SKIP_SITE - common.ROM_BASE
+        self.assertEqual(bytes(self.rom[o:o + 6]),
+                         bytes.fromhex("0a48854216d8"))   # 원본 ldr·cmp·bhi
+        self.assertEqual(bytes(out[o:o + 4]),
+                         kohook.menu_skip_site_bytes(at))
+        self.assertEqual(bytes(out[o + 4:o + 6]), bytes.fromhex("16d8"))
+        code = kohook.build_menu_skip(at)
+        a = at - common.ROM_BASE
+        self.assertEqual(bytes(out[a:a + len(code)]), code)
+
+    def test_기록_장소_이름_복사_한도를_넓힌다(self):
+        out, _ = self._build("한글")
+        o = inserttext.SAVE_PLACE_SITE - common.ROM_BASE
+        self.assertEqual(bytes(self.rom[o:o + 2]), bytes.fromhex("1022"))
+        self.assertEqual(bytes(out[o:o + 2]),
+                         bytes([inserttext.SAVE_PLACE_LIMIT, 0x22]))
+
     def test_8행_렌더러용_8x8_글리프도_만든다(self):
         out, stats = self._build("한글")
         for ch in "한글":

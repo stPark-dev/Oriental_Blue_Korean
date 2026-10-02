@@ -135,5 +135,55 @@ class HalfVariantTest(unittest.TestCase):
         d = [f"{i.mnemonic} {i.op_str}".strip() for i in MD.disasm(base, AT)]
         self.assertNotIn("subs r0, #8", d)
 
+
+class MenuSkipTest(unittest.TestCase):
+    """메뉴 렌더러는 뒤 코드를 그리지도, 세지도 않습니다.
+
+    음절이 가나처럼 한 칸이 되어 원래 칸 폭(레코드 width)에 들어가고,
+    0x51F 를 넘는 뒤 코드(종성 ㅊㅋㅌㅍㅎ)가 사용자 글리프 경로로
+    새지 않습니다.
+    """
+
+    def setUp(self):
+        if MD is None:
+            self.skipTest("capstone 없음")
+        self.code = kohook.build_menu_skip(AT)
+        self.dis = [f"{i.mnemonic} {i.op_str}".strip()
+                    for i in MD.disasm(self.code, AT)]
+        self.pool = {int.from_bytes(self.code[i:i + 4], "little")
+                     for i in range(0, len(self.code) - 3, 4)}
+
+    def test_뒤_코드_범위를_가린다(self):
+        self.assertIn(kohook.trail_code(0), self.pool)
+        self.assertIn(kohook.trail_code(kohook.TRAIL_COUNT - 1), self.pool)
+
+    def test_앞_코드_뒤에_올_때만_뒤_코드로_본다(self):
+        # 0x520–0x524 는 게임의 사용자 글리프(「Lv」 등)와 겹칩니다.
+        # 바로 앞 코드의 뱅크 바이트([r8-4])가 3·4 일 때만 건너뜁니다.
+        i = self.dis.index("mov r0, r8")
+        self.assertEqual(self.dis[i + 1:i + 3],
+                         ["subs r0, #4", "ldrb r0, [r0]"])
+        self.assertIn(f"cmp r0, #{kohook.LEAD_BANKS[0]}", self.dis)
+        self.assertIn(f"cmp r0, #{kohook.LEAD_BANKS[-1]}", self.dis)
+
+    def test_뒤_코드는_루프의_다음_글자로_건너뛴다(self):
+        self.assertIn(kohook.MENU_SKIP_RESUME | 1, self.pool)
+        self.assertIn("bx r0", self.dis)
+
+    def test_나머지는_원래_비교를_되살려_돌아간다(self):
+        self.assertIn(kohook.MENU_CUSTOM_FROM, self.pool)
+        i = self.dis.index("bx lr")
+        self.assertEqual(self.dis[i - 1], "cmp r5, r0")
+
+    def test_스택을_건드리지_않는다(self):
+        self.assertFalse(any(d.startswith(("push", "pop")) for d in self.dis))
+
+    def test_호출_지점은_ldr_cmp_네_바이트만_바꾼다(self):
+        b = kohook.menu_skip_site_bytes(AT)
+        self.assertEqual(len(b), 4)
+        d = [f"{i.mnemonic} {i.op_str}" for i in
+             MD.disasm(b, kohook.MENU_SKIP_SITE)]
+        self.assertEqual(d[0], f"bl #{AT:#x}")
+
 if __name__ == "__main__":
     unittest.main()

@@ -82,6 +82,9 @@ width: ## 번역문 폭 검사 (창 밖으로 잘리는 줄 찾기)
 flow: ## 창 폭을 넘긴 줄 쪼개기 안전망 (GROW=8 WRITE=1 로 반영)
 	@$(PYTHON) tools/koflow.py $(if $(WRITE),--write) $(if $(GROW),--grow $(GROW))
 
+menu: ## 메뉴 항목이 제 칸(VM 레코드 칸 수)에 들어가는지
+	@$(PYTHON) tools/komenu.py $(ROM)
+
 fit: ## 창 폭을 넘긴 줄 목록 (COUNT=200 으로 개수 조절)
 	@$(PYTHON) tools/kofit.py list --count $(or $(COUNT),100)
 
@@ -139,4 +142,4 @@ clean: ## 빌드 산출물 삭제
 	@rm -rf $(BUILD)/*.gba $(BUILD)/*.tsv $(BUILD)/*.png $(BUILD)/*.log
 	@echo "정리 완료"
 
-.PHONY: help hooks test check width flow fit prog gloss same sheet audit shiri scan-ptr scan-text scan-lz tbl tbl-check strings vm grid grid-find script dump font-orig font insert title narr patch build verify run clean
+.PHONY: help hooks test check width menu flow fit prog gloss same sheet audit shiri scan-ptr scan-text scan-lz tbl tbl-check strings vm grid grid-find script dump font-orig font insert title narr patch build verify run clean
