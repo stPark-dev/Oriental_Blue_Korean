@@ -205,6 +205,7 @@ make            # 전체 타깃 목록
 | `tools/kotitle.py` | 타이틀 배경판 정리 · 오프닝 영문 로고 한글화 |
 | `tools/kologo.py` | 타이틀 한글 로고를 스프라이트로 얹는 훅 |
 | `tools/konarr.py` | 오프닝 나레이션 한글화 (스프라이트 글리프) |
+| `tools/kocutin.py` | 대도 초반 연출 글자 그림 「たすけて」→「도와줘」 |
 | `tools/koshiri.py` | 끝말잇기 낱말표 분석·사슬 검증·표식 재계산 |
 | `tools/inserttext.py` | 글리프·훅·번역문 삽입 (`make insert`) |
 | `tools/patch.py` | IPS / BPS 패치 생성 · 적용 |

@@ -123,6 +123,7 @@ insert: strings ## 번역문 + 한글 폰트 + 타이틀 삽입 -> build/patched
 	fi
 	@$(PYTHON) tools/konarr.py $(PATCHED) --font $(FONT)
 	@$(PYTHON) tools/koshiri.py patch $(PATCHED)
+	@$(PYTHON) tools/kocutin.py $(PATCHED)
 
 title: ## 타이틀 로고만 다시 만들기 (build/patched.gba 필요)
 	@$(PYTHON) tools/kotitle.py $(PATCHED) --logo $(LOGO) --font $(FONT8) --sprite
