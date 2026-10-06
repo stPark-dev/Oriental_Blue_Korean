@@ -355,6 +355,27 @@ class RomTest(unittest.TestCase):
         self.assertIn((30 * 8 - 8, 6 * 8), pos)          # 오른쪽 끝 흰 점
         self.assertIn((24 * 8 - 8, 1 * 8), pos)          # 「블」 위 흰 점
 
+    def test_영문_로고_모드는_부제_타일만_바꾼다(self):
+        # 사용자 결정 (2026-10-06): 타이틀은 원본 영문 로고를 그대로 두고
+        # 부제만 한글로. 띠·장식·오프닝 로고는 원본 그대로입니다.
+        before = kotitle.load_tiles(self.rom)
+        out = bytearray(self.rom)
+        stats = kotitle.apply(out, LOGO, FONT, keep_wordmark=True)
+        after = kotitle.load_tiles(out)
+        for t in range(len(before) // 32):
+            idx = t + kotitle.TILE_BASE
+            same = before[t * 32:(t + 1) * 32] == after[t * 32:(t + 1) * 32]
+            if idx in kotitle.SUBTITLE_TILES:
+                continue
+            self.assertTrue(same, f"건드리면 안 되는 타일 0x{idx:03X}")
+        self.assertGreater(stats["부제 화소"], 0)
+        intro = slice(kotitle.INTRO_AT, kotitle.INTRO_AT + kotitle.INTRO_LEN)
+        self.assertEqual(bytes(out[intro]), bytes(self.rom[intro]))
+
+    def test_영문_로고_모드는_로고_그림이_없어도_된다(self):
+        out = bytearray(self.rom)
+        kotitle.apply(out, None, FONT, keep_wordmark=True)
+
     def test_두_블록_밖_롬은_그대로다(self):
         out = bytearray(self.rom)
         kotitle.apply(out, LOGO, FONT)

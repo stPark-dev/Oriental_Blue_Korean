@@ -770,16 +770,20 @@ def build_intro(rom: bytes, logo: str):
 
 # --- 빌드 ------------------------------------------------------------------
 
-def build(rom: bytes, logo: str, font: str, sprite: bool = False,
-          subfont: str | None = None):
+def build(rom: bytes, logo: str | None, font: str, sprite: bool = False,
+          subfont: str | None = None, keep_wordmark: bool = False):
     """(재압축한 타일셋, 통계). ROM 은 건드리지 않습니다.
 
     `sprite` 면 띠는 비우기만 합니다 — 워드마크는 kologo 가 스프라이트로
-    얹습니다. 부제는 어느 쪽이든 원래 판에 한글로 그립니다.
+    얹습니다. `keep_wordmark` 면 원본 영문 로고를 그대로 둡니다.
+    부제는 어느 쪽이든 원래 판에 한글로 그립니다.
     """
     tiles = load_tiles(rom)
-    stats = blank_wordmark(tiles) if sprite else render_wordmark(tiles, logo)
-    stats["지운 장식"] = clear_overlay(tiles)
+    if keep_wordmark:
+        stats = {}
+    else:
+        stats = blank_wordmark(tiles) if sprite else render_wordmark(tiles, logo)
+        stats["지운 장식"] = clear_overlay(tiles)
     stats.update(render_subtitle(tiles, subfont or font))
     packed = gbalz.compress(bytes(tiles))
     if len(packed) > TILES_LEN:
@@ -790,11 +794,16 @@ def build(rom: bytes, logo: str, font: str, sprite: bool = False,
     return packed, stats
 
 
-def apply(rom: bytearray, logo: str, font: str, sprite: bool = False,
-          subfont: str | None = None) -> dict:
-    """ROM 을 제자리에서 고칩니다 (타이틀 + 오프닝 로고)."""
-    packed, stats = build(rom, logo, font, sprite, subfont)
+def apply(rom: bytearray, logo: str | None, font: str, sprite: bool = False,
+          subfont: str | None = None, keep_wordmark: bool = False) -> dict:
+    """ROM 을 제자리에서 고칩니다 (타이틀 + 오프닝 로고).
+
+    `keep_wordmark` 면 부제만 고치고 오프닝 끝 영문 로고도 그대로 둡니다.
+    """
+    packed, stats = build(rom, logo, font, sprite, subfont, keep_wordmark)
     rom[TILES_AT:TILES_AT + len(packed)] = packed
+    if keep_wordmark:
+        return stats
     ipacked, istats = build_intro(rom, logo)
     rom[INTRO_AT:INTRO_AT + len(ipacked)] = ipacked
     stats.update(istats)
@@ -811,20 +820,28 @@ def main() -> int:
                     help="부제 글꼴 (없으면 --font)")
     ap.add_argument("--sprite", action="store_true",
                     help="띠는 비우기만 (워드마크는 kologo 스프라이트)")
+    ap.add_argument("--english", action="store_true",
+                    help="원본 영문 로고를 두고 부제만 한글로")
     args = ap.parse_args()
 
-    for p in (args.logo, args.font):
+    for p in ((args.font,) if args.english else (args.logo, args.font)):
         if not os.path.exists(p):
             print(f"[!] 파일이 없습니다: {p}")
             return 1
     rom = bytearray(common.load(args.rom))
     try:
         stats = apply(rom, args.logo, args.font, args.sprite,
-                      args.subfont if os.path.exists(args.subfont) else None)
+                      args.subfont if os.path.exists(args.subfont) else None,
+                      keep_wordmark=args.english)
     except TitleError as e:
         print(f"[!] {e}")
         return 1
     common.save(args.out or args.rom, bytes(rom))
+    if args.english:
+        print(f"  타이틀 로고    원본 영문 그대로 · 부제 「{SUBTITLE_TEXT}」 "
+              f"{stats['부제 화소']}화소 · 타일셋 {stats['압축']:,}바이트 "
+              f"(자리 {TILES_LEN:,})")
+        return 0
     if args.sprite:
         print(f"  타이틀 띠      일본어 로고 자리 메움 · 칠한 타일 "
               f"{stats['칠한 타일']}개 · 덮개 장식 {stats['지운 장식']}타일 지움 "

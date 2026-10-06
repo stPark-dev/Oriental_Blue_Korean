@@ -114,19 +114,18 @@ shiri: ## 끝말잇기 낱말표 검사 (사슬·버퍼)
 insert: strings ## 번역문 + 한글 폰트 + 타이틀 삽입 -> build/patched.gba
 	@test -f $(FONT) || (echo "한글 TTF 가 없습니다: $(FONT)"; exit 1)
 	@$(PYTHON) tools/inserttext.py $(ROM) $(PATCHED) --ttf $(FONT) \
-		$$(test -f $(FONT8) && echo --ttf8 $(FONT8)) \
-		$$(test -f $(LOGO) && echo --logo $(LOGO))
-	@if test -f $(LOGO) && test -f $(FONT8); then \
-		$(PYTHON) tools/kotitle.py $(PATCHED) --logo $(LOGO) --font $(FONT8) --sprite; \
+		$$(test -f $(FONT8) && echo --ttf8 $(FONT8))
+	@if test -f $(FONT8); then \
+		$(PYTHON) tools/kotitle.py $(PATCHED) --font $(FONT8) --english; \
 	else \
-		echo "  타이틀         건너뜀 ($(LOGO) 또는 $(FONT8) 없음)"; \
+		echo "  타이틀         건너뜀 ($(FONT8) 없음)"; \
 	fi
 	@$(PYTHON) tools/konarr.py $(PATCHED) --font $(FONT)
 	@$(PYTHON) tools/koshiri.py patch $(PATCHED)
 	@$(PYTHON) tools/kocutin.py $(PATCHED)
 
-title: ## 타이틀 로고만 다시 만들기 (build/patched.gba 필요)
-	@$(PYTHON) tools/kotitle.py $(PATCHED) --logo $(LOGO) --font $(FONT8) --sprite
+title: ## 타이틀 부제만 다시 만들기 (build/patched.gba 필요, 로고는 원본 영문)
+	@$(PYTHON) tools/kotitle.py $(PATCHED) --font $(FONT8) --english
 
 narr: ## 오프닝 나레이션만 다시 만들기 (build/patched.gba 필요)
 	@$(PYTHON) tools/konarr.py $(PATCHED) --font $(FONT)
