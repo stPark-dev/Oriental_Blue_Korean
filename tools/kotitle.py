@@ -112,10 +112,13 @@ OVERLAY_TILES = (0x0B0, 0x10D, 0x10E)
 SUBTITLE_TOP = tuple(range(0x140, 0x146))
 SUBTITLE_BOTTOM = tuple(range(0x160, 0x166))
 SUBTITLE_TILES = SUBTITLE_TOP + SUBTITLE_BOTTOM
+# 원본 글자 아랫부분은 판 아래 셋째 줄까지 내려옵니다 (화면 y 72~, 흰색으로
+# 칠한 실험 롬에서 부제 바로 아래 띠로만 나옴을 확인). 투명하게 비웁니다.
+SUBTITLE_BELOW = tuple(range(0x180, 0x186))
 SUBTITLE_W, SUBTITLE_H = 48, 16
 SUBTITLE_SIZE = 12          # Galmuri11 은 12 에서 픽셀 격자에 맞습니다 (높이 11)
-SUB_OUTLINE = 1             # 원본 글자의 짙은 남색 외곽선
-SUB_GLOW = 9                # 그 바깥 하늘색 빛번짐 (위 줄 투명 자리에만)
+SUB_OUTLINE = 1             # 부제 판 바탕 (원본 글자 외곽선의 짙은 남색)
+SUB_GLOW = 9                # 부제 판 테두리 (원본 빛번짐의 하늘색)
 SUBTITLE_TEXT = "청의 천외"
 
 # 칠할 수 있는 칸이 20~23행(32픽셀)에 몰려 있어 원본 비율(4.4:1)대로 키우면
@@ -637,44 +640,35 @@ def subtitle_text_mask(font: str, text: str = SUBTITLE_TEXT) -> list[bool]:
 
 
 def render_subtitle(tiles: bytearray, font: str, text: str = SUBTITLE_TEXT) -> dict:
-    """부제 열두 타일(48×16)을 한글로 바꿉니다.
+    """부제 열두 타일(48×16)을 한글 판으로 새로 그립니다.
 
-    원본은 흰 글자(15)에 짙은 남색 외곽선(1)과 하늘색 빛번짐을 두르고, 아래
-    줄은 줄마다 짙어지는 파란 판(2~5)입니다. 위 줄의 글자 없는 자리는 투명.
-    같은 짜임으로 다시 그립니다.
+    원본 판은 글자 주변 빛번짐이 판 모양을 이룹니다 — 아래 줄의 색(2~8)을
+    이어 쓰면 원래 「青の天外」 모양이 비쳐 보였습니다 (2026-10-06 사용자
+    지적). 그래서 원본 화소는 쓰지 않고, 폭 전체(양옆 장식 줄과 이어짐)의
+    남색 판(1)에 하늘색 테두리(9)를 두르고 흰 글자(15)를 얹습니다. 판 밖은
+    투명, 네 모서리는 둥글게 비웁니다.
     """
     w, h = SUBTITLE_W, SUBTITLE_H
-    canvas = subtitle_canvas(tiles)
-    out = bytearray(w * h)
-    for y in range(8, h):                   # 아래 줄: 줄마다 판 색
-        row = [canvas[y * w + x] for x in range(w)]
-        plate = [v for v in row if 2 <= v <= 5]
-        color = max(set(plate), key=plate.count) if plate else 0
-        for x in range(w):
-            out[y * w + x] = color if row[x] else TRANSPARENT
     mask = subtitle_text_mask(font, text)
-
-    def ring(src):
-        res = [False] * (w * h)
-        for i in range(w * h):
-            if src[i]:
-                continue
-            x, y = i % w, i // w
-            res[i] = any(src[(y + dy) * w + x + dx]
-                         for dy in (-1, 0, 1) for dx in (-1, 0, 1)
-                         if 0 <= x + dx < w and 0 <= y + dy < h)
-        return res
-    outline = ring(mask)
-    glow = ring([m or o for m, o in zip(mask, outline)])
+    rows = [i // w for i, m in enumerate(mask) if m]
+    top = max(0, min(rows) - 2)
+    bottom = min(h - 1, max(rows) + 2)
+    out = bytearray(w * h)                  # TRANSPARENT
     ink = 0
-    for i in range(w * h):
-        if mask[i]:
-            out[i] = WHITE
-            ink += 1
-        elif outline[i]:
-            out[i] = SUB_OUTLINE
-        elif glow[i] and out[i] == TRANSPARENT:
-            out[i] = SUB_GLOW
+    for y in range(top, bottom + 1):
+        for x in range(w):
+            i = y * w + x
+            edge_y = y in (top, bottom)
+            edge_x = x in (0, w - 1)
+            if edge_y and edge_x:
+                continue                    # 둥근 모서리
+            if mask[i]:
+                out[i] = WHITE
+                ink += 1
+            elif edge_y or edge_x:
+                out[i] = SUB_GLOW
+            else:
+                out[i] = SUB_OUTLINE
     for row, group in enumerate((SUBTITLE_TOP, SUBTITLE_BOTTOM)):
         for i, t in enumerate(group):
             px = bytearray(64)
@@ -682,6 +676,8 @@ def render_subtitle(tiles: bytearray, font: str, text: str = SUBTITLE_TEXT) -> d
                 for x in range(8):
                     px[y * 8 + x] = out[(row * 8 + y) * w + i * 8 + x]
             set_tile(tiles, t, px)
+    for t in SUBTITLE_BELOW:
+        set_tile(tiles, t, bytearray(64))
     return {"부제 화소": ink}
 
 
