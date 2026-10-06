@@ -20,7 +20,7 @@ ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 ROM = os.path.join(ROOT, "rom", "baserom.gba")
 LOGO = os.path.join(ROOT, "art", "title_ko.png")
 FONT = os.path.join(ROOT, "font", "Galmuri7.ttf")
-SUBFONT = os.path.join(ROOT, "font", "Galmuri11-Condensed.ttf")
+SUBART = os.path.join(ROOT, "art", "subtitle_ko.png")
 
 
 class ConstTest(unittest.TestCase):
@@ -274,82 +274,31 @@ class RomTest(unittest.TestCase):
                              after[t * 32:(t + 1) * 32],
                              f"건드리면 안 되는 타일 0x{idx:03X}")
 
-    @unittest.skipUnless(os.path.exists(SUBFONT), "Galmuri11-Condensed 없음")
-    def test_부제_글꼴은_원래_픽셀_크기(self):
-        from PIL import Image, ImageDraw, ImageFont
-        face = ImageFont.truetype(SUBFONT, kotitle.SUBTITLE_SIZE)
-        img = Image.new("L", (64, 24), 0)
-        ImageDraw.Draw(img).text((2, 2), kotitle.SUBTITLE_TEXT, font=face, fill=255)
-        self.assertEqual([v for v in img.getdata() if 40 < v < 215], [])
-
-    def test_부제는_두_줄_열두_타일(self):
-        # 원본 「青の天外」는 16화소 높이 — 위 줄 0x140~ 와 아래 줄 0x160~.
-        # 아래 줄만 고치면 위 줄에 일본어 글자 윗부분이 남습니다.
+    def test_부제는_세_줄_열여덟_타일(self):
+        # 원본 「青の天外」는 세 줄에 걸칩니다 — 0x140~, 0x160~, 그리고 판
+        # 아래 0x180~ (글자 끝 5줄, 화면 y 72~). 셋째 줄을 몰라 그대로 두었을
+        # 때 원본 글자 끝이 비쳤습니다. 흰색으로 칠한 실험 롬에서 부제 자리로만
+        # 나옴을 확인했습니다.
         self.assertEqual(len(kotitle.SUBTITLE_TILES), 12)
-        self.assertIn(0x140, kotitle.SUBTITLE_TILES)
-        self.assertIn(0x165, kotitle.SUBTITLE_TILES)
+        self.assertEqual(kotitle.SUBTITLE_BELOW, tuple(range(0x180, 0x186)))
+        self.assertEqual((kotitle.SUBTITLE_W, kotitle.SUBTITLE_H), (48, 24))
 
-    @unittest.skipUnless(os.path.exists(SUBFONT), "Galmuri11-Condensed 없음")
-    def test_부제에_원본_글자가_남지_않고_한글이_두_줄에_걸친다(self):
-        tiles = kotitle.load_tiles(self.rom)
-        stats = kotitle.render_subtitle(tiles, SUBFONT)
-        canvas = kotitle.subtitle_canvas(tiles)
-        mask = kotitle.subtitle_text_mask(SUBFONT, kotitle.SUBTITLE_TEXT)
-        w = kotitle.SUBTITLE_W
-        for i, v in enumerate(canvas):
-            if v == kotitle.WHITE:
-                self.assertTrue(mask[i], f"원본 흰 화소가 남음 {i % w},{i // w}")
-        rows = {i // w for i, m in enumerate(mask) if m}
-        self.assertTrue(any(r < 8 for r in rows) and any(r >= 8 for r in rows))
-        self.assertGreater(stats["부제 화소"], 60)
+    @unittest.skipUnless(os.path.exists(SUBART), "art/subtitle_ko.png 없음")
+    def test_부제_그림은_48x24_팔레트_3_색_번호(self):
+        px = kotitle.load_subtitle_art(SUBART)
+        self.assertEqual(len(px), 48 * 24)
+        self.assertTrue(set(px) <= set(range(16)))
+        self.assertGreater(px.count(kotitle.WHITE), 40)
+        # 네모 판이 아니라 글자를 따라 번짐 — 투명 자리가 글자 사이에도 있다
+        self.assertGreater(px.count(kotitle.TRANSPARENT), 48 * 24 // 3)
 
-    @unittest.skipUnless(os.path.exists(SUBFONT), "Galmuri11-Condensed 없음")
-    def test_부제_판에_원본_색이_남지_않는다(self):
-        # 원본 판 아래 줄의 번짐 색(2~8 등)을 이어 쓰면 원래 글자 모양이
-        # 비쳐 보였습니다. 판은 남색 바탕·하늘색 테두리·흰 글자만.
+    @unittest.skipUnless(os.path.exists(SUBART), "art/subtitle_ko.png 없음")
+    def test_부제_세_줄을_그림과_똑같이(self):
         tiles = kotitle.load_tiles(self.rom)
-        kotitle.render_subtitle(tiles, SUBFONT)
-        canvas = kotitle.subtitle_canvas(tiles)
-        allowed = {kotitle.TRANSPARENT, kotitle.SUB_OUTLINE,
-                   kotitle.SUB_GLOW, kotitle.WHITE}
-        self.assertEqual(set(canvas) - allowed, set())
-
-    def test_부제_아래_셋째_줄의_원본_글자_끝을_지운다(self):
-        # 원본 「青の天外」는 판 아래 셋째 줄(0x180~0x185, 화면 y 72~)까지
-        # 내려옵니다. 흰색으로 칠한 실험 롬에서 부제 바로 아래 띠로만 나옴을
-        # 확인했습니다. 비우면 뒤의 돌벽·금색 문장이 비칩니다.
-        tiles = kotitle.load_tiles(self.rom)
-        self.assertTrue(any(any(kotitle.tile_pixels(tiles, t))
-                            for t in kotitle.SUBTITLE_BELOW))
-        kotitle.render_subtitle(tiles, SUBFONT if os.path.exists(SUBFONT) else FONT)
-        for t in kotitle.SUBTITLE_BELOW:
-            self.assertEqual(set(kotitle.tile_pixels(tiles, t)),
-                             {kotitle.TRANSPARENT}, hex(t))
-
-    @unittest.skipUnless(os.path.exists(SUBFONT), "Galmuri11-Condensed 없음")
-    def test_글자는_판_안에만(self):
-        tiles = kotitle.load_tiles(self.rom)
-        kotitle.render_subtitle(tiles, SUBFONT)
-        canvas = kotitle.subtitle_canvas(tiles)
-        w, h = kotitle.SUBTITLE_W, kotitle.SUBTITLE_H
-        for i, v in enumerate(canvas):
-            if v != kotitle.WHITE:
-                continue
-            x, y = i % w, i // w
-            for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
-                n = canvas[(y + dy) * w + x + dx]
-                self.assertNotEqual(n, kotitle.TRANSPARENT, f"{x},{y}")
-
-    @unittest.skipUnless(os.path.exists(SUBFONT), "Galmuri11-Condensed 없음")
-    def test_판은_좌우_장식_줄과_이어진다(self):
-        # 양옆 「—」 장식 줄(BG3 9행 11·12열, 19·20열)이 판 가장자리에 닿게
-        tiles = kotitle.load_tiles(self.rom)
-        kotitle.render_subtitle(tiles, SUBFONT)
-        canvas = kotitle.subtitle_canvas(tiles)
-        w = kotitle.SUBTITLE_W
-        for y in range(9, 13):
-            self.assertNotEqual(canvas[y * w], kotitle.TRANSPARENT)
-            self.assertNotEqual(canvas[y * w + w - 1], kotitle.TRANSPARENT)
+        stats = kotitle.paste_subtitle(tiles, SUBART)
+        self.assertEqual(list(kotitle.subtitle_canvas(tiles)),
+                         kotitle.load_subtitle_art(SUBART))
+        self.assertGreater(stats["부제 화소"], 40)
 
     def test_부제_여섯_타일이_바뀐다(self):
         before = kotitle.load_tiles(self.rom)

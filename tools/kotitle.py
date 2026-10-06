@@ -107,18 +107,21 @@ MIRROR_TILES = (0x0CE, 0x0EE)
 # `0x10E` 은 아예 안 쓰임). 투명하게 비우면 뒤의 돌벽이 비칩니다.
 OVERLAY_TILES = (0x0B0, 0x10D, 0x10E)
 
-# 부제 「青の天外」 48×16 — BG3 9행(위 줄)과 10행(아래 줄). 두 줄 다 이 자리
-# 에서만 씁니다 (원본 타이틀 세이브스테이트의 맵 4장으로 확인).
+# 부제 「青の天外」 48×24 — 세 줄입니다. 위 줄 0x140~, 가운데 0x160~, 그리고
+# 판 아래 0x180~ (원본 글자 끝 5줄, 화면 y 72~). 셋 다 이 자리에서만 씁니다
+# (세이브스테이트 맵, 그리고 흰색으로 칠한 실험 롬으로 확인).
 SUBTITLE_TOP = tuple(range(0x140, 0x146))
 SUBTITLE_BOTTOM = tuple(range(0x160, 0x166))
 SUBTITLE_TILES = SUBTITLE_TOP + SUBTITLE_BOTTOM
-# 원본 글자 아랫부분은 판 아래 셋째 줄까지 내려옵니다 (화면 y 72~, 흰색으로
-# 칠한 실험 롬에서 부제 바로 아래 띠로만 나옴을 확인). 투명하게 비웁니다.
 SUBTITLE_BELOW = tuple(range(0x180, 0x186))
-SUBTITLE_W, SUBTITLE_H = 48, 16
-SUBTITLE_SIZE = 12          # Galmuri11 은 12 에서 픽셀 격자에 맞습니다 (높이 11)
-SUB_OUTLINE = 1             # 부제 판 바탕 (원본 글자 외곽선의 짙은 남색)
-SUB_GLOW = 9                # 부제 판 테두리 (원본 빛번짐의 하늘색)
+SUBTITLE_ROWS = (SUBTITLE_TOP, SUBTITLE_BOTTOM, SUBTITLE_BELOW)
+SUBTITLE_W, SUBTITLE_H = 48, 24
+# 팔레트 3 색 번호를 그대로 담은 48×24 그림. 원본처럼 흰 글자 + 남색 외곽선
+# + 글자를 따라 퍼지는 하늘색 번짐이고, 그 밖은 투명이라 배경이 비칩니다
+# (Noto Serif CJK SemiBold 13px 를 8배로 그려 줄이고 덮임 110 이상을 흰색으로.
+# 중간 밝기 단계를 넣으면 타일셋이 원래 자리를 51바이트 넘습니다).
+SUBTITLE_ART = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..",
+                            "art", "subtitle_ko.png")
 SUBTITLE_TEXT = "청의 천외"
 
 # 칠할 수 있는 칸이 20~23행(32픽셀)에 몰려 있어 원본 비율(4.4:1)대로 키우면
@@ -614,9 +617,9 @@ def clear_overlay(tiles: bytearray) -> int:
 
 
 def subtitle_canvas(tiles: bytes) -> bytearray:
-    """부제 두 줄을 48×16 색 번호 그림으로."""
+    """부제 세 줄을 48×24 색 번호 그림으로."""
     out = bytearray(SUBTITLE_W * SUBTITLE_H)
-    for row, group in enumerate((SUBTITLE_TOP, SUBTITLE_BOTTOM)):
+    for row, group in enumerate(SUBTITLE_ROWS):
         for i, t in enumerate(group):
             px = tile_pixels(tiles, t)
             for y in range(8):
@@ -625,60 +628,30 @@ def subtitle_canvas(tiles: bytes) -> bytearray:
     return out
 
 
-def subtitle_text_mask(font: str, text: str = SUBTITLE_TEXT) -> list[bool]:
-    """부제 글자 모양 (가운데 맞춤, 아래에 붙임)."""
-    from PIL import Image, ImageDraw, ImageFont
-    face = ImageFont.truetype(font, SUBTITLE_SIZE)
-    img = Image.new("L", (SUBTITLE_W, SUBTITLE_H), 0)
-    draw = ImageDraw.Draw(img)
-    x0, y0, x1, y1 = draw.textbbox((0, 0), text, font=face)
-    draw.text(((SUBTITLE_W - (x1 - x0)) // 2 - x0, SUBTITLE_H - y1 - 1),
-              text, font=face, fill=255)
-    ip = img.load()
-    return [ip[i % SUBTITLE_W, i // SUBTITLE_W] > 110
-            for i in range(SUBTITLE_W * SUBTITLE_H)]
+def load_subtitle_art(path: str = SUBTITLE_ART) -> list[int]:
+    from PIL import Image
+    im = Image.open(path)
+    if im.mode != "P" or im.size != (SUBTITLE_W, SUBTITLE_H):
+        raise TitleError(f"{path}: {SUBTITLE_W}×{SUBTITLE_H} 색 번호(P) 그림이어야 합니다")
+    return list(im.getdata())
 
 
-def render_subtitle(tiles: bytearray, font: str, text: str = SUBTITLE_TEXT) -> dict:
-    """부제 열두 타일(48×16)을 한글 판으로 새로 그립니다.
+def paste_subtitle(tiles: bytearray, art: str = SUBTITLE_ART) -> dict:
+    """부제 세 줄(18타일)을 그림으로 바꿉니다.
 
-    원본 판은 글자 주변 빛번짐이 판 모양을 이룹니다 — 아래 줄의 색(2~8)을
-    이어 쓰면 원래 「青の天外」 모양이 비쳐 보였습니다 (2026-10-06 사용자
-    지적). 그래서 원본 화소는 쓰지 않고, 폭 전체(양옆 장식 줄과 이어짐)의
-    남색 판(1)에 하늘색 테두리(9)를 두르고 흰 글자(15)를 얹습니다. 판 밖은
-    투명, 네 모서리는 둥글게 비웁니다.
+    원본 화소는 쓰지 않습니다 — 원본 번짐은 원래 글자 모양을 따라 있어서
+    이어 쓰면 그 모양이 비쳤습니다. 네모 판도 그리지 않습니다 (2026-10-06
+    사용자: 「사각형으로 구역이 나뉜 듯해 부자연스럽다」).
     """
-    w, h = SUBTITLE_W, SUBTITLE_H
-    mask = subtitle_text_mask(font, text)
-    rows = [i // w for i, m in enumerate(mask) if m]
-    top = max(0, min(rows) - 2)
-    bottom = min(h - 1, max(rows) + 2)
-    out = bytearray(w * h)                  # TRANSPARENT
-    ink = 0
-    for y in range(top, bottom + 1):
-        for x in range(w):
-            i = y * w + x
-            edge_y = y in (top, bottom)
-            edge_x = x in (0, w - 1)
-            if edge_y and edge_x:
-                continue                    # 둥근 모서리
-            if mask[i]:
-                out[i] = WHITE
-                ink += 1
-            elif edge_y or edge_x:
-                out[i] = SUB_GLOW
-            else:
-                out[i] = SUB_OUTLINE
-    for row, group in enumerate((SUBTITLE_TOP, SUBTITLE_BOTTOM)):
+    px = load_subtitle_art(art)
+    for row, group in enumerate(SUBTITLE_ROWS):
         for i, t in enumerate(group):
-            px = bytearray(64)
+            tile = bytearray(64)
             for y in range(8):
                 for x in range(8):
-                    px[y * 8 + x] = out[(row * 8 + y) * w + i * 8 + x]
-            set_tile(tiles, t, px)
-    for t in SUBTITLE_BELOW:
-        set_tile(tiles, t, bytearray(64))
-    return {"부제 화소": ink}
+                    tile[y * 8 + x] = px[(row * 8 + y) * SUBTITLE_W + i * 8 + x]
+            set_tile(tiles, t, tile)
+    return {"부제 화소": px.count(WHITE)}
 
 
 # --- 오프닝 영문 로고 ---------------------------------------------------
@@ -767,7 +740,7 @@ def build_intro(rom: bytes, logo: str):
 # --- 빌드 ------------------------------------------------------------------
 
 def build(rom: bytes, logo: str | None, font: str, sprite: bool = False,
-          subfont: str | None = None, keep_wordmark: bool = False):
+          keep_wordmark: bool = False):
     """(재압축한 타일셋, 통계). ROM 은 건드리지 않습니다.
 
     `sprite` 면 띠는 비우기만 합니다 — 워드마크는 kologo 가 스프라이트로
@@ -780,7 +753,7 @@ def build(rom: bytes, logo: str | None, font: str, sprite: bool = False,
     else:
         stats = blank_wordmark(tiles) if sprite else render_wordmark(tiles, logo)
         stats["지운 장식"] = clear_overlay(tiles)
-    stats.update(render_subtitle(tiles, subfont or font))
+    stats.update(paste_subtitle(tiles))
     packed = gbalz.compress(bytes(tiles))
     if len(packed) > TILES_LEN:
         raise TitleError(
@@ -791,12 +764,12 @@ def build(rom: bytes, logo: str | None, font: str, sprite: bool = False,
 
 
 def apply(rom: bytearray, logo: str | None, font: str, sprite: bool = False,
-          subfont: str | None = None, keep_wordmark: bool = False) -> dict:
+          keep_wordmark: bool = False) -> dict:
     """ROM 을 제자리에서 고칩니다 (타이틀 + 오프닝 로고).
 
     `keep_wordmark` 면 부제만 고치고 오프닝 끝 영문 로고도 그대로 둡니다.
     """
-    packed, stats = build(rom, logo, font, sprite, subfont, keep_wordmark)
+    packed, stats = build(rom, logo, font, sprite, keep_wordmark)
     rom[TILES_AT:TILES_AT + len(packed)] = packed
     if keep_wordmark:
         return stats
@@ -812,8 +785,6 @@ def main() -> int:
     ap.add_argument("-o", "--out", help="따로 저장할 경로")
     ap.add_argument("--logo", default="art/title_ko.png")
     ap.add_argument("--font", default="font/Galmuri7.ttf")
-    ap.add_argument("--subfont", default="font/Galmuri11-Condensed.ttf",
-                    help="부제 글꼴 (없으면 --font)")
     ap.add_argument("--sprite", action="store_true",
                     help="띠는 비우기만 (워드마크는 kologo 스프라이트)")
     ap.add_argument("--english", action="store_true",
@@ -827,7 +798,6 @@ def main() -> int:
     rom = bytearray(common.load(args.rom))
     try:
         stats = apply(rom, args.logo, args.font, args.sprite,
-                      args.subfont if os.path.exists(args.subfont) else None,
                       keep_wordmark=args.english)
     except TitleError as e:
         print(f"[!] {e}")
