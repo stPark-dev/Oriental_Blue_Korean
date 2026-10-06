@@ -7,6 +7,8 @@ CONFIG  ?= config/blocks.json
 BUILD   ?= build
 PATCHED := $(BUILD)/patched.gba
 PATCH   ?= patch/oriental_blue_ko.bps
+VERSION ?= 0.9
+RELEASE := $(BUILD)/오리엔탈블루_한글_v$(VERSION)
 FONT    ?= font/Galmuri14.ttf
 FONT8   ?= font/Galmuri7.ttf
 LOGO    ?= art/title_ko.png
@@ -135,6 +137,11 @@ patch: insert ## 배포용 BPS 패치 생성
 
 build: check insert patch verify ## 전체 빌드 (패치 검증까지)
 
+release: build ## 배포 파일 -> build/오리엔탈블루_한글_v$(VERSION).gba/.bps (VERSION=1.1 처럼 지정)
+	@cp $(PATCHED) "$(RELEASE).gba"
+	@cp $(PATCH) "$(RELEASE).bps"
+	@echo "배포 파일: $(RELEASE).gba · $(RELEASE).bps"
+
 verify: ## 생성된 패치를 원본에 적용해 검증
 	@$(PYTHON) tools/patch.py apply $(ROM) $(PATCH) $(BUILD)/verify.gba
 	@cmp $(BUILD)/verify.gba $(PATCHED) && echo "검증 통과"
@@ -146,4 +153,4 @@ clean: ## 빌드 산출물 삭제
 	@rm -rf $(BUILD)/*.gba $(BUILD)/*.tsv $(BUILD)/*.png $(BUILD)/*.log
 	@echo "정리 완료"
 
-.PHONY: help hooks test check width menu name flow fit prog gloss same sheet audit shiri scan-ptr scan-text scan-lz tbl tbl-check strings vm grid grid-find script dump font-orig font insert title narr patch build verify run clean
+.PHONY: help hooks test check width menu name flow fit prog gloss same sheet audit shiri scan-ptr scan-text scan-lz tbl tbl-check strings vm grid grid-find script dump font-orig font insert title narr patch build release verify run clean

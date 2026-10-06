@@ -8,6 +8,8 @@
 
 게임보이 어드밴스(GBA) RPG 『오리엔탈블루 청의천외』의 한국어 번역 패치 프로젝트입니다.
 
+**현재 버전: v0.9** (검수 전 공개판) · [변경 기록](CHANGELOG.md)
+
 </div>
 
 ---
@@ -169,6 +171,7 @@ make audit      # 제어 코드·줄 수·printf·조사 전수 감사
 make menu       # 메뉴 항목·기록 화면 장소 이름이 제 칸에 드는지
 make shiri      # 끝말잇기 낱말 사슬 검사
 make patch      # 배포용 BPS
+make release    # 버전 붙은 배포 파일 -> build/오리엔탈블루_한글_v0.9.gba/.bps
 make            # 전체 타깃 목록
 ```
 
