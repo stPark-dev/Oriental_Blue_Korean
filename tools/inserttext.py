@@ -66,6 +66,29 @@ NAME_ADD_PATCH = (
     (0x0804AC70, bytes.fromhex("05B0"), bytes.fromhex("08B0")),   # add sp,#0x20
 )
 
+# 메뉴 설명문을 스택 64바이트(`sub sp,#0x40`)에 복사해 그리는 함수 셋.
+# 일본어는 많아야 42바이트였지만 한글은 91바이트까지라 넘쳐 복귀 주소를
+# 덮었습니다 (타이틀에서 TRADE 에 커서를 두면 멈춤). 128바이트로 넓힙니다.
+#   0x0803ADDC 타이틀 메뉴 설명  DF3908 0x1FA+커서, 0x202+상태
+#   0x0803AE50 세이브 오류 안내  DF3908 0x205·0x206+커서
+#   0x08058518 교환 메뉴 설명    DF3908 0x1B4+커서 (커서 5 까지)
+DESC_BUFFER = 0x80
+DESC_IDS = frozenset(range(0x1B4, 0x1BA)) | frozenset(range(0x1FA, 0x20A))
+DESC_BUFFER_PATCH = (
+    (0x0803ADDE, bytes.fromhex("90B0"), bytes.fromhex("A0B0")),   # sub sp,#0x80
+    (0x0803AE44, bytes.fromhex("10B0"), bytes.fromhex("20B0")),   # add sp,#0x80
+    (0x0803AE52, bytes.fromhex("90B0"), bytes.fromhex("A0B0")),
+    (0x0803AEC0, bytes.fromhex("10B0"), bytes.fromhex("20B0")),
+    (0x0805851A, bytes.fromhex("90B0"), bytes.fromhex("A0B0")),
+    (0x08058556, bytes.fromhex("10B0"), bytes.fromhex("20B0")),
+)
+
+
+def desc_overflows(encoded: dict[int, bytes]) -> list[tuple[int, int]]:
+    """설명문 버퍼를 넘는 (DF3908 번호, 종결자 포함 바이트 수)."""
+    return [(i, len(d)) for i, d in sorted(encoded.items())
+            if i in DESC_IDS and len(d) > DESC_BUFFER]
+
 
 class InsertError(Exception):
     pass
@@ -354,7 +377,7 @@ def build_patch(rom: bytearray, ko_dir: str, tables: list[int],
 
     koname.install(rom)                    # 이름 입력판 10x8 가나다 순
 
-    for at, orig, new in NAME_ADD_PATCH:
+    for at, orig, new in NAME_ADD_PATCH + DESC_BUFFER_PATCH:
         o = at - common.ROM_BASE
         if bytes(rom[o:o + 2]) != orig:
             raise InsertError(f"0x{at:08X} 가 {orig.hex()} 가 아닙니다")
@@ -381,11 +404,14 @@ def build_patch(rom: bytearray, ko_dir: str, tables: list[int],
 
     written = entries = 0
     for base, rows in translated.items():
+        desc = {}
         for idx, text in sorted(rows.items()):
             try:
                 data = koenc.encode(text, ko_map, ja_rev)
             except koenc.EncodeError as e:
                 raise InsertError(f"테이블 0x{base:06X} #{idx}: {e}") from e
+            if base == CHOICE_TABLE:
+                desc[idx] = data
             # 게임은 읽을 때마다 전개하므로 눌러 넣습니다. 누르지 않으면
             # ROM 이 모자랍니다 (한글은 음절당 코드 두 개).
             data = kolz.compress_checked(data)
@@ -394,6 +420,9 @@ def build_patch(rom: bytearray, ko_dir: str, tables: list[int],
             common.w32(rom, base + idx * 4, (off - base) & 0xFFFFFFFF)
             written += len(data)
             entries += 1
+        for idx, n in desc_overflows(desc):
+            raise InsertError(f"DF3908 #{idx}: 설명문 {n}바이트가 "
+                              f"버퍼 {DESC_BUFFER}바이트를 넘습니다")
 
     return rom, {
         "번역 항목": entries,

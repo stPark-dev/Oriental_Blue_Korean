@@ -21,7 +21,7 @@ ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 TTF = "/home/stpark/다운로드/hanguel2/galmuri/Galmuri14.ttf"
 
 # 메뉴 설명문 "さいしょから　はじめます"
-TABLE, INDEX = 0xDF3908, 506
+TABLE, INDEX = 0xDF3908, 500
 
 
 class ReverseTableTest(unittest.TestCase):
@@ -256,6 +256,29 @@ class RomPatchTest(unittest.TestCase):
         self.assertEqual(tail, b"\xff" * len(tail))
         self.assertEqual(stats["늘린 자리 남음"], 0x1000000 - 4)
 
+    def test_설명문이_버퍼를_넘으면_알린다(self):
+        n = inserttext.DESC_BUFFER
+        ok = {508: b"x" * (n - 1) + b"\0"}
+        self.assertEqual(inserttext.desc_overflows(ok), [])
+        bad = {508: b"x" * n + b"\0", 9999: b"x" * 500}
+        self.assertEqual(inserttext.desc_overflows(bad), [(508, n + 1)])
+
+    def test_긴_설명문은_빌드를_멈춘다(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ko = os.path.join(tmp, "ko")
+            os.makedirs(ko)
+            with open(os.path.join(ko, f"t{TABLE:06X}.txt"), "w",
+                      encoding="utf-8", newline="\n") as f:
+                f.write("## 0508 @0x000000\n" + "가" * 40 + "\n\n")
+            with self.assertRaises(inserttext.InsertError):
+                inserttext.build_patch(bytearray(self.rom), ko, [TABLE],
+                                       TTF, 14, 2)
+
+    def test_설명문_번호는_세_함수가_쓰는_범위(self):
+        ids = inserttext.DESC_IDS
+        for i in (436, 440, 506, 508, 510, 512, 517, 518):
+            self.assertIn(i, ids)
+
     def test_원래_자리가_모자라면_늘린_자리를_쓴다(self):
         arena = inserttext.Arena(bytearray(16), [(0, 8)], ext=(100, 200))
         self.assertEqual(arena.alloc(8, align=1), 0)
@@ -279,6 +302,14 @@ class RomPatchTest(unittest.TestCase):
     def test_이름_입력_덧붙이기_버퍼를_넓힌다(self):
         out, _ = self._build("한글")
         for at, orig, new in inserttext.NAME_ADD_PATCH:
+            o = at - common.ROM_BASE
+            self.assertEqual(bytes(self.rom[o:o + 2]), orig)
+            self.assertEqual(bytes(out[o:o + 2]), new)
+
+    def test_메뉴_설명_버퍼를_넓힌다(self):
+        # 타이틀·교환·세이브 오류 설명문을 스택 64바이트에 복사하던 함수들
+        out, _ = self._build("한글")
+        for at, orig, new in inserttext.DESC_BUFFER_PATCH:
             o = at - common.ROM_BASE
             self.assertEqual(bytes(self.rom[o:o + 2]), orig)
             self.assertEqual(bytes(out[o:o + 2]), new)
